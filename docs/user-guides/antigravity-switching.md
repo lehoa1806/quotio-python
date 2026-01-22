@@ -175,6 +175,9 @@ The implementation consists of:
 
 ## Related Features
 
-- **Warmup Service**: Keeps Antigravity accounts active to prevent quota expiration
+- **Auto Warmup**: Keeps Antigravity accounts active to prevent quota expiration
+  - Access via **Providers** tab → Select **Antigravity** → Click **"Auto Warmup"** button
+  - Opens a modal dialog to manage warmup configurations for all accounts
+  - Configure schedules, select models, and enable/disable warmup per account
 - **Quota Tracking**: Automatically refreshes quota data after account switch
 - **Provider Management**: Manage all Antigravity accounts from the Providers tab

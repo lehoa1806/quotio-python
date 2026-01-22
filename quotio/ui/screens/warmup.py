@@ -1,10 +1,11 @@
 """Warmup (Auto Wake-up) management screen."""
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
+    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, QTableWidgetItem,
     QPushButton, QHeaderView, QMessageBox, QAbstractItemView, QDialogButtonBox
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QIcon
 from datetime import datetime
 from typing import Optional, List
 
@@ -232,68 +233,72 @@ class WarmupScreen(QDialog):
             actions_layout.setContentsMargins(2, 2, 2, 2)
             actions_widget.setLayout(actions_layout)
             
-            # Edit button (matching Dashboard style)
-            edit_button = QPushButton("Edit")
+            # Edit button (icon only, small size, no background color)
+            edit_button = QPushButton("⚙️")
+            edit_button.setToolTip("Edit configuration")
+            edit_button.setFixedSize(28, 28)
             edit_button.setStyleSheet("""
                 QPushButton {
-                    padding: 6px 12px;
-                    font-size: 12px;
-                    border-radius: 4px;
-                    background-color: #007AFF;
-                    color: white;
+                    border: none;
+                    background: transparent;
+                    font-size: 14px;
                 }
                 QPushButton:hover {
-                    background-color: #0051D5;
+                    background-color: rgba(0, 0, 0, 0.1);
+                    border-radius: 4px;
                 }
             """)
             edit_button.clicked.connect(lambda checked, key=account_key, email=account_email: self._edit_config(key, email))
             actions_layout.addWidget(edit_button)
             
-            # Enable/Disable button (matching Dashboard style)
+            # Enable/Disable button (icon only, small size, no background color)
             if is_enabled:
-                toggle_button = QPushButton("Disable")
+                toggle_button = QPushButton("⏸️")
+                toggle_button.setToolTip("Disable warmup")
+                toggle_button.setFixedSize(28, 28)
                 toggle_button.setStyleSheet("""
                     QPushButton {
-                        padding: 6px 12px;
-                        font-size: 12px;
-                        border-radius: 4px;
-                        background-color: #FF9500;
-                        color: white;
+                        border: none;
+                        background: transparent;
+                        font-size: 14px;
                     }
                     QPushButton:hover {
-                        background-color: #E6850E;
+                        background-color: rgba(0, 0, 0, 0.1);
+                        border-radius: 4px;
                     }
                 """)
                 toggle_button.clicked.connect(lambda checked, key=account_key: self._toggle_warmup(key, False))
             else:
-                toggle_button = QPushButton("Enable")
+                toggle_button = QPushButton("▶️")
+                toggle_button.setToolTip("Enable warmup")
+                toggle_button.setFixedSize(28, 28)
                 toggle_button.setStyleSheet("""
                     QPushButton {
-                        padding: 6px 12px;
-                        font-size: 12px;
-                        border-radius: 4px;
-                        background-color: #34C759;
-                        color: white;
+                        border: none;
+                        background: transparent;
+                        font-size: 14px;
                     }
                     QPushButton:hover {
-                        background-color: #2AA84F;
+                        background-color: rgba(0, 0, 0, 0.1);
+                        border-radius: 4px;
                     }
                 """)
                 toggle_button.clicked.connect(lambda checked, key=account_key: self._toggle_warmup(key, True))
             actions_layout.addWidget(toggle_button)
             
-            # Delete button (darker red style)
-            delete_button = QPushButton("Delete")
+            # Delete button (icon only, small size, no background color)
+            delete_button = QPushButton("🗑️")
+            delete_button.setToolTip("Remove from warmup list")
+            delete_button.setFixedSize(28, 28)
             delete_button.setStyleSheet("""
                 QPushButton {
-                    padding: 6px 12px;
-                    font-size: 12px;
-                    border-radius: 4px;
-                    background-color: #8B0000;
-                    color: white;
+                    border: none;
+                    background: transparent;
+                    font-size: 14px;
                 }
                 QPushButton:hover {
-                    background-color: #6B0000;
+                    background-color: rgba(0, 0, 0, 0.1);
+                    border-radius: 4px;
                 }
             """)
             delete_button.clicked.connect(lambda checked, key=account_key, email=account_email: self._delete_warmup(key, email))

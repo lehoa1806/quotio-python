@@ -13,7 +13,7 @@ Welcome to the Quotio Python Edition documentation. This documentation is organi
 - **[IDE Scan Guide](user-guides/ide-scan.md)** - How to scan for and detect installed IDEs
 - **[Custom Providers Guide](user-guides/custom-providers.md)** - Setting up custom AI providers
 - **[Remote Proxy Configuration](user-guides/remote-proxy.md)** - Connecting to remote proxy servers
-- **[Antigravity Account Switching](user-guides/antigravity-switching.md)** - Managing multiple Antigravity accounts
+- **[Antigravity Account Switching](user-guides/antigravity-switching.md)** - Managing multiple Antigravity accounts and Auto Warmup
 
 ### Docker
 - **[Docker Quick Start](docker/quickstart.md)** - Running Quotio in Docker

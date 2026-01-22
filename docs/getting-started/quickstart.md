@@ -32,14 +32,14 @@ python -m quotio.main
    - Wait for proxy to start (status turns green)
 
 3. **Connect a Provider**
-   - Go to Providers tab
+   - Go to Providers tab (2nd tab)
    - Select a provider (e.g., Claude)
    - Click "Connect"
    - Complete OAuth in browser
    - Provider will appear as connected
 
 4. **View Quotas**
-   - Go to Quota tab
+   - Go to Dashboard tab (quotas are shown here)
    - Click "Refresh" to load quota data
    - View quota percentages and usage
 
@@ -61,9 +61,16 @@ python -m quotio.main
 3. Restart proxy for changes to take effect
 
 ### Refreshing Quota Data
-1. Go to Quota tab
+1. Go to Dashboard tab
 2. Click "Refresh" button
 3. Data updates automatically
+
+### Managing Auto Warmup (Antigravity)
+1. Go to Providers tab
+2. Select Antigravity from the provider list
+3. Click "Auto Warmup" button
+4. A modal dialog will open showing all Antigravity accounts
+5. Configure warmup settings for each account (schedule, models, etc.)
 
 ## Troubleshooting
 

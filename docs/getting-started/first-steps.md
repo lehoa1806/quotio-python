@@ -67,10 +67,11 @@ To automatically start the proxy when the application launches:
 - Quota summaries for all providers
 - Quick actions (start/stop proxy, refresh quotas)
 
-### Providers Tab
+### Providers Tab (2nd tab)
 - List of all supported AI providers
 - Connect/disconnect providers via OAuth
 - View connected accounts
+- **Antigravity**: Switch accounts and manage Auto Warmup (opens modal dialog)
 
 ### Agents Tab
 - Detect installed CLI coding tools
