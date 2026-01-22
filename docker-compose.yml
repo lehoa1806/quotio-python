@@ -1,0 +1,44 @@
+services:
+  quotio:
+    build: .
+    container_name: quotio-python
+    # X11 forwarding
+    # Linux: Requires xhost +local:docker (run once on host)
+    # macOS: Requires XQuartz with network connections enabled
+    volumes:
+      # X11 socket for GUI (Linux only - macOS uses host.docker.internal)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # Linux X11 forwarding
+      # Application data
+      - quotio-data:/home/quotio/.quotio
+      - quotio-auth:/home/quotio/.cli-proxy-api
+      # Optional: mount host directories for configs
+      - ~/.quotio:/home/quotio/.quotio:rw
+    environment:
+      # Linux: Use $DISPLAY or :0, macOS: Use host.docker.internal:0
+      # Set DISPLAY env var before running: export DISPLAY=:0 (Linux) or export DISPLAY=host.docker.internal:0 (macOS)
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_QPA_PLATFORM=xcb
+      # OAuth credentials (optional, can override defaults)
+      - ANTIGRAVITY_CLIENT_ID=${ANTIGRAVITY_CLIENT_ID:-}
+      - ANTIGRAVITY_CLIENT_SECRET=${ANTIGRAVITY_CLIENT_SECRET:-}
+      # Debug mode (optional)
+      - QUOTIO_DEBUG=${QUOTIO_DEBUG:-0}
+    network_mode: host  # Required for localhost proxy (port 8317)
+    # Alternative: use ports mapping
+    # ports:
+    #   - "8317:8317"  # Proxy port
+    #   - "5900:5900"  # VNC port (if using VNC)
+    security_opt:
+      - seccomp:unconfined  # May be needed for some operations
+    # Capabilities (minimal, for security)
+    cap_add:
+      - SYS_ADMIN  # May be needed for process management
+    # Restrict capabilities if possible
+    # cap_drop:
+    #   - ALL
+    stdin_open: true
+    tty: true
+
+volumes:
+  quotio-data:
+  quotio-auth:

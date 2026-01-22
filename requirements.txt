@@ -1,0 +1,25 @@
+# Core dependencies
+aiohttp>=3.9.0
+pydantic>=2.5.0
+pyyaml>=6.0.1
+
+# GUI Framework (PyQt6 - cross-platform)
+PyQt6>=6.6.0
+PyQt6-Qt6>=6.6.0
+
+# HTTP client
+httpx>=0.25.0
+requests>=2.31.0
+
+# Configuration
+python-dotenv>=1.0.0
+
+# Logging
+loguru>=0.7.2
+
+# Utilities
+click>=8.1.7
+keyring>=24.3.0  # For secure credential storage
+
+# Security
+cryptography>=41.0.0  # For secure key storage

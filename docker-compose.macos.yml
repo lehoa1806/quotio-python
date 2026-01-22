@@ -1,0 +1,35 @@
+# macOS-specific Docker Compose configuration
+# Use: docker-compose -f docker-compose.macos.yml up
+
+services:
+  quotio:
+    build: .
+    container_name: quotio-python
+    volumes:
+      # Application data
+      - quotio-data:/home/quotio/.quotio
+      - quotio-auth:/home/quotio/.cli-proxy-api
+      # Mount host directories for configs
+      - ~/.quotio:/home/quotio/.quotio:rw
+      - ~/.cli-proxy-api:/home/quotio/.cli-proxy-api:rw
+    environment:
+      # macOS: Use host.docker.internal for XQuartz
+      - DISPLAY=host.docker.internal:0
+      - QT_QPA_PLATFORM=xcb
+      # OAuth credentials (optional, can override defaults)
+      - ANTIGRAVITY_CLIENT_ID=${ANTIGRAVITY_CLIENT_ID:-}
+      - ANTIGRAVITY_CLIENT_SECRET=${ANTIGRAVITY_CLIENT_SECRET:-}
+      # Debug mode (optional)
+      - QUOTIO_DEBUG=${QUOTIO_DEBUG:-0}
+    network_mode: host  # Required for localhost proxy (port 8317)
+    security_opt:
+      - seccomp:unconfined  # May be needed for some operations
+    # Capabilities (minimal, for security)
+    cap_add:
+      - SYS_ADMIN  # May be needed for process management
+    stdin_open: true
+    tty: true
+
+volumes:
+  quotio-data:
+  quotio-auth:
