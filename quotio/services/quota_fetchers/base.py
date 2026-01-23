@@ -50,12 +50,14 @@ class QuotaModel:
         limit: Total quota limit (if available)
         used: Amount used (if available)
         remaining: Amount remaining (if available)
+        reset_time: ISO timestamp string indicating when quota resets (if available)
     """
     name: str
     percentage: float  # -1 for unknown/unavailable
     limit: Optional[int] = None
     used: Optional[int] = None
     remaining: Optional[int] = None
+    reset_time: Optional[str] = None  # ISO timestamp string (e.g., "2026-01-30T05:47:16Z")
 
 
 @dataclass

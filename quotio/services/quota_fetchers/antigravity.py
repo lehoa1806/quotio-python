@@ -219,10 +219,16 @@ class AntigravityQuotaFetcher(BaseQuotaFetcher):
         return None
     
     def _parse_quota_response(self, data: dict) -> ProviderQuotaData:
-        """Parse quota response from Antigravity API."""
+        """Parse quota response from Antigravity API.
+        
+        Note: The Antigravity API only provides percentage-based quota information
+        (remainingFraction) and reset time. It does NOT provide absolute values like
+        limit, used, or remaining credits. Therefore, these fields will be None.
+        """
         models = []
         
         quota_models = data.get("models", {})
+        
         for model_name, model_info in quota_models.items():
             # Only include gemini or claude models
             if "gemini" not in model_name.lower() and "claude" not in model_name.lower():
@@ -234,14 +240,22 @@ class AntigravityQuotaFetcher(BaseQuotaFetcher):
                 percentage = remaining_fraction * 100
                 reset_time = quota_info.get("resetTime", "")
                 
+                # Antigravity API only provides remainingFraction (percentage) and resetTime.
+                # It does NOT provide absolute quota values (limit, used, remaining).
+                # These fields will be None, and the UI will only display the percentage.
+                limit = None
+                used = None
+                remaining = None
+
                 models.append(QuotaModel(
                     name=model_name,
                     percentage=max(0, percentage),
-                    used=None,
-                    limit=None,
-                    remaining=None,
+                    used=used,
+                    limit=limit,
+                    remaining=remaining,
+                    reset_time=reset_time if reset_time else None,
                 ))
-        
+
         return ProviderQuotaData(models=models)
     
     def _read_auth_file(self, file_path: Path) -> Optional[dict]:

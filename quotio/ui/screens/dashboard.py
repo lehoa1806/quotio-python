@@ -186,9 +186,14 @@ class DashboardScreen(QWidget):
         # Quota table - expand to fill available space
         self.quota_table = QTableWidget()
         self.quota_table.setColumnCount(5)
-        self.quota_table.setHorizontalHeaderLabels(["Provider", "Account", "Model", "Usage %", "Status"])
-        self.quota_table.horizontalHeader().setStretchLastSection(True)
-        self.quota_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.quota_table.setHorizontalHeaderLabels(["Provider", "Account", "Model", "Usage", "Status"])
+        # Set column resize modes: resize to contents with max widths
+        header = self.quota_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Provider
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Account
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Model
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Usage
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # Status (stretches to fill)
         self.quota_table.setAlternatingRowColors(True)
         self.quota_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.quota_table.setStyleSheet("""
@@ -1070,11 +1075,19 @@ class DashboardScreen(QWidget):
                 model_item = QTableWidgetItem(model.name)
                 self.quota_table.setItem(row, 2, model_item)
                 
-                # Usage percentage with color-coded status
+                # Usage column - only show percentage
                 quota_data = item_data['quota_data']
                 if model.percentage >= 0:
                     usage_text = f"{model.percentage:.1f}%"
+                    tooltip_parts = [f"Usage: {model.percentage:.1f}%"]
+                    
+                    # Add used if available for tooltip
+                    if model.used is not None:
+                        tooltip_parts.append(f"Used: {model.used:,}")
+                    
                     usage_item = QTableWidgetItem(usage_text)
+                    usage_item.setToolTip("\n".join(tooltip_parts))
+                    
                     # Use color-coded status based on usage percentage
                     # Dark green if usage >= 60%, Orange if >= 20% < 60%, Red if < 20%
                     status_color = get_quota_status_color(model.percentage)
@@ -1091,13 +1104,12 @@ class DashboardScreen(QWidget):
                         usage_item = QTableWidgetItem("N/A")
                     self.quota_table.setItem(row, 3, usage_item)
                 
-                # Status with color-coded indicator (based on highest usage across models)
-                # Also show subscription cap if available
+                # Status column - show connection status, cap, remaining, and reset time
                 status_parts = []
                 tooltip_parts = []
                 
                 if quota_data.models:
-                    # Calculate highest usage percentage across all models for status
+                    # Calculate highest usage percentage across all models for status color
                     usage_percentages = [m.percentage for m in quota_data.models if m.percentage >= 0]
                     if usage_percentages:
                         highest_usage = max(usage_percentages)
@@ -1116,12 +1128,44 @@ class DashboardScreen(QWidget):
                             status_color = QColor(16, 185, 129)  # Dark green - account is connected
                         status_parts.append(status_text)
                     
-                    # Add subscription cap if available (from plan usage)
-                    for model in quota_data.models:
-                        if model.name == "Plan Usage" and model.limit:
-                            status_parts.append(f"Cap: {model.limit}")
-                            tooltip_parts.append(f"Plan Usage Cap: {model.limit}")
-                            break
+                    # Add cap (limit) if available for this specific model
+                    if model.limit is not None:
+                        status_parts.append(f"Cap: {model.limit:,}")
+                        tooltip_parts.append(f"Cap: {model.limit:,}")
+                    
+                    # Add remaining credits if available for this specific model
+                    if model.remaining is not None:
+                        status_parts.append(f"Remaining: {model.remaining:,}")
+                        tooltip_parts.append(f"Remaining: {model.remaining:,}")
+                    elif model.used is not None and model.limit is not None:
+                        # Calculate remaining if we have used and limit
+                        remaining = model.limit - model.used
+                        if remaining >= 0:
+                            status_parts.append(f"Remaining: {remaining:,}")
+                            tooltip_parts.append(f"Remaining: {remaining:,}")
+                    
+                    # Add reset time if available for this specific model
+                    if model.reset_time:
+                        # Format the ISO timestamp to a more readable format
+                        try:
+                            from datetime import datetime
+                            reset_dt = datetime.fromisoformat(model.reset_time.replace('Z', '+00:00'))
+                            # Format as: "Jan 30, 05:47" (shorter format for Status column)
+                            reset_formatted = reset_dt.strftime("%b %d, %H:%M")
+                            status_parts.append(f"Resets: {reset_formatted}")
+                            tooltip_parts.append(f"Reset Time: {model.reset_time}")
+                        except Exception:
+                            # If parsing fails, just show the raw value
+                            status_parts.append(f"Resets: {model.reset_time}")
+                            tooltip_parts.append(f"Reset Time: {model.reset_time}")
+                    
+                    # Add subscription cap if available (from plan usage) - only if not already added
+                    if not any("Cap:" in part for part in status_parts):
+                        for plan_model in quota_data.models:
+                            if plan_model.name == "Plan Usage" and plan_model.limit:
+                                status_parts.append(f"Cap: {plan_model.limit:,}")
+                                tooltip_parts.append(f"Plan Usage Cap: {plan_model.limit:,}")
+                                break
                 else:
                     status_text = "No data"
                     status_parts.append(status_text)
@@ -1156,6 +1200,24 @@ class DashboardScreen(QWidget):
                 self.quota_table.setItem(row, 4, status_item)
                 
                 row += 1
+        
+        # Set maximum column widths after populating data
+        # This ensures columns fit content but don't get too wide
+        if total_rows > 0:
+            # Set individual column max widths (in pixels)
+            # Provider column: max 150px
+            if self.quota_table.columnWidth(0) > 150:
+                self.quota_table.setColumnWidth(0, 150)
+            # Account column: max 200px
+            if self.quota_table.columnWidth(1) > 200:
+                self.quota_table.setColumnWidth(1, 200)
+            # Model column: max 200px
+            if self.quota_table.columnWidth(2) > 200:
+                self.quota_table.setColumnWidth(2, 200)
+            # Usage column: max 100px (just percentage)
+            if self.quota_table.columnWidth(3) > 100:
+                self.quota_table.setColumnWidth(3, 100)
+            # Status column will stretch to fill remaining space
         
         if total_rows == 0:
             self.quota_status_label.setText("No quota data matches the current filters.")
