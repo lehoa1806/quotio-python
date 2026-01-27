@@ -61,7 +61,7 @@ from ..models.operating_mode import OperatingMode, OperatingModeManager
 from ..models.subscription import SubscriptionInfo
 from ..models.usage_stats import UsageStats
 from ..services.proxy_manager import CLIProxyManager
-from ..services.api_client import ManagementAPIClient
+from ..services.api_client import ManagementAPIClient, APIError
 from ..services.quota_fetchers.base import ProviderQuotaData
 from ..services.notification_manager import NotificationManager, NotificationType
 from ..services.warmup_service import WarmupService, WarmupSettings, WarmupStatus, WarmupAccountKey, WarmupCadence, WarmupScheduleMode
@@ -249,6 +249,7 @@ class QuotaViewModel:
     # Usage stats polling
     _usage_stats_task: Optional[asyncio.Task] = None
     _usage_stats_polling_active: bool = False
+    _last_proxy_restart_attempt: Optional[float] = None  # Timestamp of last restart attempt
 
     def __post_init__(self):
         """Initialize after creation."""
@@ -846,6 +847,26 @@ class QuotaViewModel:
                                 self.subscription_infos[provider] = {}
                             self.subscription_infos[provider].update(subscriptions)
                             print(f"[QuotaViewModel] ✓ Fetched {len(subscriptions)} subscription(s) for {provider.display_name}")
+                    # Special handling for Gemini to get both quotas and subscriptions
+                    elif provider == AIProvider.GEMINI and hasattr(fetcher, 'fetch_all_gemini_data'):
+                        quotas, subscriptions = await fetcher.fetch_all_gemini_data()
+                        if quotas:
+                            self.provider_quotas[provider] = quotas
+                            # Check for low quota notifications
+                            self._check_quota_alerts(provider, quotas)
+                            print(f"[QuotaViewModel] ✓ Fetched {len(quotas)} quota(s) for {provider.display_name}")
+                            # Notify UI immediately after each provider's quotas are fetched
+                            # This ensures UI updates progressively as data arrives
+                            self._notify_quota_updated()
+                        else:
+                            print(f"[QuotaViewModel] ⚠ No quotas returned for {provider.display_name}")
+
+                        # Store subscription info
+                        if subscriptions:
+                            if provider not in self.subscription_infos:
+                                self.subscription_infos[provider] = {}
+                            self.subscription_infos[provider].update(subscriptions)
+                            print(f"[QuotaViewModel] ✓ Fetched {len(subscriptions)} subscription(s) for {provider.display_name}")
                     else:
                         quotas = await fetcher.fetch_all_quotas()
                         if quotas:
@@ -914,8 +935,16 @@ class QuotaViewModel:
             if proxy_url and hasattr(gemini_cli_fetcher, 'update_proxy_configuration'):
                 gemini_cli_fetcher.update_proxy_configuration(proxy_url)
             try:
-                quotas = await gemini_cli_fetcher.fetch_all_quotas()
-                print(f"[QuotaViewModel] Gemini CLI fetch_all_quotas() returned: {len(quotas)} account(s)")
+                # Try to fetch both quotas and subscriptions
+                if hasattr(gemini_cli_fetcher, 'fetch_all_gemini_data'):
+                    quotas, subscriptions = await gemini_cli_fetcher.fetch_all_gemini_data()
+                    print(f"[QuotaViewModel] Gemini CLI fetch_all_gemini_data() returned: {len(quotas)} quota(s), {len(subscriptions)} subscription(s)")
+                else:
+                    # Fallback to old method if fetch_all_gemini_data doesn't exist
+                    quotas = await gemini_cli_fetcher.fetch_all_quotas()
+                    subscriptions = {}
+                    print(f"[QuotaViewModel] Gemini CLI fetch_all_quotas() returned: {len(quotas)} account(s)")
+
                 if quotas:
                     print(f"[QuotaViewModel] Fetched {len(quotas)} Gemini CLI account(s) (connection status)")
                     for email, quota_data in quotas.items():
@@ -928,10 +957,19 @@ class QuotaViewModel:
                     print(f"[QuotaViewModel] Gemini provider now has {len(self.provider_quotas[AIProvider.GEMINI])} account(s)")
                     # Notify UI of update
                     self._notify_quota_updated()
+
+                # Store subscription info
+                if subscriptions:
+                    if AIProvider.GEMINI not in self.subscription_infos:
+                        self.subscription_infos[AIProvider.GEMINI] = {}
+                    self.subscription_infos[AIProvider.GEMINI].update(subscriptions)
+                    print(f"[QuotaViewModel] ✓ Fetched {len(subscriptions)} Gemini subscription(s)")
                 else:
                     print(f"[QuotaViewModel] No Gemini CLI quotas returned (auth file may not exist or no account info)")
             except Exception as e:
                 print(f"[QuotaViewModel] Error fetching Gemini CLI quotas: {e}")
+                import traceback
+                traceback.print_exc()
                 import traceback
                 traceback.print_exc()
         finally:
@@ -1140,8 +1178,26 @@ class QuotaViewModel:
         self.oauth_state = OAuthState(provider=provider, status=OAuthStatus.WAITING)
         self.status_message = f"Opening browser for {provider.display_name}..."
 
+        # Verify proxy is running before attempting OAuth
+        if not self.proxy_manager.proxy_status.running:
+            self.oauth_state = OAuthState(
+                provider=provider,
+                status=OAuthStatus.ERROR,
+                error="Proxy is not running. Please start the proxy first."
+            )
+            self.status_message = "Error: Proxy not running"
+            return
+
         try:
-            response = await self.api_client.get_oauth_url(provider, project_id)
+            # Add timeout wrapper for OAuth URL request
+            # Use asyncio.wait_for to provide better error messages
+            try:
+                response = await asyncio.wait_for(
+                    self.api_client.get_oauth_url(provider, project_id),
+                    timeout=30.0  # 30 second timeout for OAuth URL request
+                )
+            except asyncio.TimeoutError:
+                raise APIError("Connection timeout to proxy. The proxy may be slow to respond or not accessible.")
 
             if response.status != "ok" or not response.url or not response.state:
                 self.oauth_state = OAuthState(
@@ -1186,12 +1242,36 @@ class QuotaViewModel:
             await self._poll_oauth_status(response.state, provider)
             self.status_message = None
 
-        except Exception as e:
+        except APIError as e:
+            # APIError already has a formatted message
+            error_msg = str(e)
+            # Check if it's a timeout/connection error
+            if "timeout" in error_msg.lower() or "TimeoutError" in error_msg:
+                # Provide more helpful error message for timeout
+                if not self.proxy_manager.proxy_status.running:
+                    error_msg = "Proxy is not running. Please start the proxy first."
+                else:
+                    error_msg = f"Connection timeout to proxy: {error_msg}. The proxy may be slow to respond or there may be a network issue."
             self.oauth_state = OAuthState(
                 provider=provider,
                 status=OAuthStatus.ERROR,
-                error=str(e)
+                error=error_msg
             )
+            self.status_message = f"Error: {error_msg}"
+        except Exception as e:
+            # Handle other exceptions
+            error_msg = str(e)
+            if "timeout" in error_msg.lower() or "TimeoutError" in type(e).__name__:
+                if not self.proxy_manager.proxy_status.running:
+                    error_msg = "Proxy is not running. Please start the proxy first."
+                else:
+                    error_msg = f"Connection timeout: {error_msg}. Please check if the proxy is running and accessible."
+            self.oauth_state = OAuthState(
+                provider=provider,
+                status=OAuthStatus.ERROR,
+                error=error_msg
+            )
+            self.status_message = f"Error: {error_msg}"
 
     async def _start_copilot_auth(self):
         """Start GitHub Copilot authentication using Device Code Flow."""
@@ -1594,6 +1674,59 @@ class QuotaViewModel:
                         consecutive_errors = 0
                         backoff_delay = 10
                         continue
+
+                    # Auto-restart proxy for local proxy mode if enabled and proxy appears unresponsive
+                    # Only restart if:
+                    # 1. We're in local proxy mode
+                    # 2. Auto-restart is enabled
+                    # 3. We have multiple consecutive timeout errors (3+)
+                    # 4. Proxy status says it's running but we can't connect (it may have crashed)
+                    # 5. We haven't tried to restart recently (throttle to prevent loops)
+                    if (is_timeout_error and
+                        self.mode_manager.is_local_proxy_mode and
+                        self.settings.get("autoRestartProxy", False) and
+                        consecutive_errors >= 3 and
+                        self.proxy_manager.proxy_status.running):
+                        # Check if we've restarted recently (throttle: max once per 5 minutes)
+                        current_time = asyncio.get_event_loop().time()
+                        if (self._last_proxy_restart_attempt is None or
+                            (current_time - self._last_proxy_restart_attempt) >= 300):  # 5 minutes
+                            log_with_timestamp(
+                                f"Proxy appears unresponsive after {consecutive_errors} consecutive timeouts. Attempting auto-restart...",
+                                "[QuotaViewModel]"
+                            )
+                            self._last_proxy_restart_attempt = current_time
+                            try:
+                                # Close old API client connection first
+                                if self.api_client:
+                                    try:
+                                        await self.api_client.close()
+                                    except Exception:
+                                        pass  # Ignore errors closing old client
+                                    self.api_client = None
+                                
+                                # Stop the proxy first
+                                self.proxy_manager.stop()
+                                await asyncio.sleep(2)  # Brief pause before restart
+                                
+                                # Restart the proxy (this will also recreate the API client)
+                                await self.start_proxy()
+                                log_with_timestamp(
+                                    "Proxy auto-restart completed. Waiting for proxy to become ready...",
+                                    "[QuotaViewModel]"
+                                )
+                                # Wait a bit for proxy to become ready
+                                await asyncio.sleep(5)
+                                # Reset error count after restart attempt
+                                consecutive_errors = 0
+                                backoff_delay = 10
+                                continue
+                            except Exception as restart_error:
+                                log_with_timestamp(
+                                    f"Failed to auto-restart proxy: {restart_error}",
+                                    "[QuotaViewModel]"
+                                )
+                                # Continue with normal error handling
 
                     # Calculate adaptive backoff delay based on consecutive errors
                     # Exponential backoff: 10s, 20s, 40s, max 60s

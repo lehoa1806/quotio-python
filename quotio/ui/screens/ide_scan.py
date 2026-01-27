@@ -275,7 +275,23 @@ class IDEScanScreen(QWidget):
             log_with_timestamp(f"Error saving persisted results: {e}", "[IDEScan]")
 
     def _update_display(self):
-        """Update the display."""
+        """Update the display. Must be called from main thread."""
+        # Ensure we're on the main thread - QTextEdit operations must be on main thread
+        from PyQt6.QtCore import QThread
+        from PyQt6.QtWidgets import QApplication
+        
+        app = QApplication.instance()
+        if app is None:
+            return
+        
+        current_thread = QThread.currentThread()
+        app_thread = app.thread()
+        if current_thread != app_thread:
+            # Not on main thread - schedule on main thread
+            call_on_main_thread(self._update_display)
+            return
+        
+        # Now we're on the main thread - safe to access QTextEdit
         if not self.view_model:
             self.results_text.setPlainText("No view model available.")
             return
@@ -427,7 +443,17 @@ class IDEScanScreen(QWidget):
                     self.scan_button.setEnabled(True)
                     self.scan_button.setText("Rescan" if self.view_model.ide_scan_result else "Scan")
                     self.reset_button.setEnabled(True)
-                    self.results_text.setPlainText("Scan failed. Check console for details.")
+                    # Ensure we're on main thread before accessing QTextEdit
+                    from PyQt6.QtCore import QThread
+                    from PyQt6.QtWidgets import QApplication
+                    app = QApplication.instance()
+                    if app and QThread.currentThread() == app.thread():
+                        self.results_text.setPlainText("Scan failed. Check console for details.")
+                    else:
+                        def set_text():
+                            if hasattr(self, 'results_text'):
+                                self.results_text.setPlainText("Scan failed. Check console for details.")
+                        call_on_main_thread(set_text)
                 call_on_main_thread(show_error)
 
         log_with_timestamp("Scheduling scan coroutine...", "[IDEScan]")
@@ -438,7 +464,17 @@ class IDEScanScreen(QWidget):
                 self.scan_button.setEnabled(True)
                 self.scan_button.setText("Rescan" if self.view_model.ide_scan_result else "Scan")
                 self.reset_button.setEnabled(True)
-                self.results_text.setPlainText("Error: Could not start scan. Check console for details.")
+                # Ensure we're on main thread before accessing QTextEdit
+                from PyQt6.QtCore import QThread
+                from PyQt6.QtWidgets import QApplication
+                app = QApplication.instance()
+                if app and QThread.currentThread() == app.thread():
+                    self.results_text.setPlainText("Error: Could not start scan. Check console for details.")
+                else:
+                    def set_text():
+                        if hasattr(self, 'results_text'):
+                            self.results_text.setPlainText("Error: Could not start scan. Check console for details.")
+                    call_on_main_thread(set_text)
             call_on_main_thread(reset_ui)
 
     def _on_reset(self):

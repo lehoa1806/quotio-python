@@ -144,6 +144,7 @@ class CodexCLIQuotaFetcher(BaseQuotaFetcher):
                     used=None,
                     limit=None,
                     remaining=None,
+                    reset_time=reset_time_str if reset_time_str else None,
                 ))
 
             # Secondary window = weekly
@@ -166,6 +167,7 @@ class CodexCLIQuotaFetcher(BaseQuotaFetcher):
                     used=None,
                     limit=None,
                     remaining=None,
+                    reset_time=reset_time_str if reset_time_str else None,
                 ))
 
         return ProviderQuotaData(

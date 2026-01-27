@@ -173,6 +173,7 @@ class OpenAIQuotaFetcher(BaseQuotaFetcher):
                     used=None,
                     limit=None,
                     remaining=None,
+                    reset_time=reset_time_str if reset_time_str else None,
                 ))
 
             # Secondary window = weekly
@@ -195,6 +196,7 @@ class OpenAIQuotaFetcher(BaseQuotaFetcher):
                     used=None,
                     limit=None,
                     remaining=None,
+                    reset_time=reset_time_str if reset_time_str else None,
                 ))
 
         # Also check for code_review_rate_limit (if present)

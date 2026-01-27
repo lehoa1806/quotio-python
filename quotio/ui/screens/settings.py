@@ -294,6 +294,15 @@ class SettingsScreen(QWidget):
 
         proxy_layout.addRow(status_label, status_value_layout)
 
+        # Auto-restart checkbox (only for local proxy mode)
+        self.auto_restart_checkbox = QCheckBox("Auto-restart proxy when unresponsive")
+        self.auto_restart_checkbox.setToolTip(
+            "Automatically restart the proxy if it becomes unresponsive (connection timeouts). "
+            "Only applies to local proxy mode. The proxy will be restarted after 3 consecutive timeout errors."
+        )
+        self.auto_restart_checkbox.stateChanged.connect(self._on_auto_restart_changed)
+        proxy_layout.addRow(QLabel(""), self.auto_restart_checkbox)
+
         # Endpoint - with Port next to it
         endpoint_label = QLabel("Endpoint:")
         endpoint_label.setStyleSheet("font-size: 12px; color: #333;")
@@ -613,6 +622,11 @@ class SettingsScreen(QWidget):
         auto_refresh_interval = self.view_model.settings.get("autoRefreshIntervalMinutes", 5)
         self.auto_refresh_interval_spinbox.setValue(auto_refresh_interval)
 
+        # Load auto-restart proxy setting (only for local proxy mode)
+        if self.view_model.mode_manager.is_local_proxy_mode:
+            auto_restart_enabled = self.view_model.settings.get("autoRestartProxy", False)
+            self.auto_restart_checkbox.setChecked(auto_restart_enabled)
+
         # Initialize API keys list
         self._refresh_api_keys_list()
 
@@ -925,6 +939,13 @@ class SettingsScreen(QWidget):
             self.view_model.settings.set("autoStartProxy", checked)
             # Update view model's internal state
             self.view_model._auto_start = checked
+
+    def _on_auto_restart_changed(self, state: int):
+        """Handle auto-restart checkbox change."""
+        if self.view_model:
+            # state is 0 (Unchecked), 1 (PartiallyChecked), or 2 (Checked)
+            checked = state == Qt.CheckState.Checked.value
+            self.view_model.settings.set("autoRestartProxy", checked)
 
     def _on_generate_api_key(self):
         """Generate a random API key."""
