@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Callable
 from datetime import datetime
-from PyQt6.QtWidgets import QMessageBox, QWidget, QApplication, QMenu
+from PyQt6.QtWidgets import QMessageBox, QWidget, QApplication, QMenu, QLabel
 from PyQt6.QtCore import Qt, QTimer, QThread, QMetaObject, QPoint
 from PyQt6.QtGui import QAction
 try:
@@ -530,7 +530,7 @@ def make_label_copyable(label: QWidget):
     
     label.customContextMenuRequested.connect(_on_context_menu)
 
-def _copy_label_text(widget: QLabel):
+def _copy_label_text(widget):
     """Copy label text to clipboard. Must be called from main thread."""
     app = QApplication.instance()
     if app is None:
@@ -564,7 +564,7 @@ def _copy_label_text(widget: QLabel):
         import traceback
         traceback.print_exc()
 
-def _select_all_text(widget: QLabel):
+def _select_all_text(widget):
     """Focus the label for text selection. Must be called from main thread."""
     app = QApplication.instance()
     if app is None:
