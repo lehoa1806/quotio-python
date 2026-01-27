@@ -457,9 +457,14 @@ def log_with_timestamp(message: str, prefix: str = ""):
             print(f"Warning: Could not write to log file: {e}", file=sys.stderr)
 
 
+# Global storage for original texts (thread-safe since accessed only from main thread)
+_label_original_texts = {}
+
 def make_label_copyable(label: QWidget):
     """
     Make a QLabel copyable by enabling text selection and adding context menu.
+    
+    This function must be called from the main Qt thread to ensure thread safety.
     
     Args:
         label: The QLabel widget to make copyable
@@ -467,6 +472,18 @@ def make_label_copyable(label: QWidget):
     from PyQt6.QtWidgets import QLabel
     
     if not isinstance(label, QLabel):
+        return
+    
+    # Ensure we're on the main thread - if not, schedule this function to run on main thread
+    app = QApplication.instance()
+    if app is None:
+        return
+    
+    current_thread = QThread.currentThread()
+    app_thread = app.thread()
+    if current_thread != app_thread:
+        # Not on main thread - schedule to run on main thread
+        call_on_main_thread(make_label_copyable, label)
         return
     
     # Enable text selection
@@ -478,36 +495,89 @@ def make_label_copyable(label: QWidget):
     # Add context menu for copy
     label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
     
+    # Create closure-safe functions that capture the label
     def _on_context_menu(position: QPoint):
-        """Show context menu with copy option."""
-        menu = QMenu(label)
+        """Show context menu with copy option. Called from Qt signal (main thread)."""
+        # Ensure we're on main thread (should be, but double-check)
+        if QThread.currentThread() != app.thread():
+            return
         
-        # Copy action
-        copy_action = QAction("Copy", label)
-        copy_action.triggered.connect(lambda: _copy_text(label))
-        menu.addAction(copy_action)
-        
-        # Select All action
-        select_all_action = QAction("Select All", label)
-        select_all_action.triggered.connect(lambda: _select_all(label))
-        menu.addAction(select_all_action)
-        
-        # Show menu at cursor position
-        menu.exec(label.mapToGlobal(position))
+        try:
+            menu = QMenu(label)
+            
+            # Copy action - use functools.partial or direct function reference
+            copy_action = QAction("Copy", label)
+            # Create a bound method that captures the label safely
+            def copy_handler():
+                _copy_label_text(label)
+            copy_action.triggered.connect(copy_handler)
+            menu.addAction(copy_action)
+            
+            # Select All action
+            select_all_action = QAction("Select All", label)
+            def select_all_handler():
+                _select_all_text(label)
+            select_all_action.triggered.connect(select_all_handler)
+            menu.addAction(select_all_action)
+            
+            # Show menu at cursor position
+            menu.exec(label.mapToGlobal(position))
+        except Exception as e:
+            # Log error but don't crash
+            print(f"[make_label_copyable] Error showing context menu: {e}")
+            import traceback
+            traceback.print_exc()
     
-    def _copy_text(widget: QLabel):
-        """Copy label text to clipboard."""
+    label.customContextMenuRequested.connect(_on_context_menu)
+
+def _copy_label_text(widget: QLabel):
+    """Copy label text to clipboard. Must be called from main thread."""
+    app = QApplication.instance()
+    if app is None:
+        return
+    
+    # Ensure we're on main thread
+    if QThread.currentThread() != app.thread():
+        call_on_main_thread(_copy_label_text, widget)
+        return
+    
+    try:
         clipboard = QApplication.clipboard()
         text = widget.text()
         if text:
             clipboard.setText(text)
             # Show brief feedback
             original_text = widget.text()
+            widget_id = id(widget)
+            _label_original_texts[widget_id] = original_text
             widget.setText(f"Copied: {text[:50]}..." if len(text) > 50 else f"Copied: {text}")
-            QTimer.singleShot(2000, lambda: widget.setText(original_text))
+            
+            # Use QTimer safely on main thread
+            def restore_text():
+                if widget_id in _label_original_texts:
+                    widget.setText(_label_original_texts[widget_id])
+                    del _label_original_texts[widget_id]
+            
+            QTimer.singleShot(2000, restore_text)
+    except Exception as e:
+        print(f"[_copy_label_text] Error copying text: {e}")
+        import traceback
+        traceback.print_exc()
+
+def _select_all_text(widget: QLabel):
+    """Focus the label for text selection. Must be called from main thread."""
+    app = QApplication.instance()
+    if app is None:
+        return
     
-    def _select_all(widget: QLabel):
-        """Focus the label for text selection."""
+    # Ensure we're on main thread
+    if QThread.currentThread() != app.thread():
+        call_on_main_thread(_select_all_text, widget)
+        return
+    
+    try:
         widget.setFocus()
-    
-    label.customContextMenuRequested.connect(_on_context_menu)
+    except Exception as e:
+        print(f"[_select_all_text] Error focusing widget: {e}")
+        import traceback
+        traceback.print_exc()

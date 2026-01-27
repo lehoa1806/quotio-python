@@ -474,7 +474,13 @@ class MainWindow:
             # Show brief feedback
             original_text = self.status_bar.text()
             self.status_bar.setText(f"Copied: {text[:50]}..." if len(text) > 50 else f"Copied: {text}")
-            QTimer.singleShot(2000, lambda: self.status_bar.setText(original_text))
+            
+            # Use a proper function reference instead of lambda to avoid closure issues
+            def restore_text():
+                if self.status_bar:
+                    self.status_bar.setText(original_text)
+            
+            QTimer.singleShot(2000, restore_text)
     
     def _select_all_status_bar_text(self):
         """Select all text in status bar."""
