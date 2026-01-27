@@ -324,12 +324,30 @@ class ManagementAPIClient:
             if response.status not in range(200, 300):
                 raise APIError(f"Upload failed: {response.status}")
     
-    async def fetch_usage_stats(self):
-        """Fetch usage statistics."""
+    async def fetch_usage_stats(self, timeout: Optional[float] = None):
+        """Fetch usage statistics.
+        
+        Args:
+            timeout: Optional timeout override (in seconds). If None, uses default timeout_config.
+        """
         from ..models.usage_stats import UsageStats
-        data = await self._make_request("/usage")
-        import json
-        return UsageStats.from_dict(json.loads(data.decode("utf-8")))
+        
+        # Use shorter timeout for usage stats (frequent polling operation)
+        # Default to 8 seconds for usage stats to fail fast and retry quickly
+        if timeout is None:
+            timeout = 8.0
+        
+        # Create a timeout wrapper for this specific request
+        try:
+            data = await asyncio.wait_for(
+                self._make_request("/usage"),
+                timeout=timeout
+            )
+            import json
+            return UsageStats.from_dict(json.loads(data.decode("utf-8")))
+        except asyncio.TimeoutError:
+            # Re-raise with more context
+            raise APIError(f"Usage stats request timed out after {timeout}s")
     
     # MARK: - Advanced Proxy Configuration Methods
     

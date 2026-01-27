@@ -603,28 +603,34 @@ class ProvidersScreen(QWidget):
             if reply != QMessageBox.StandardButton.Yes:
                 return
         
-        # Show account selection
+        # Refresh active account detection before showing dialog
+        async def refresh_and_show_dialog():
+            await self.view_model.antigravity_switcher.detect_active_account()
+            from ..utils import call_on_main_thread
+            # Capture auth_files in the lambda's default argument to ensure it's properly captured
+            call_on_main_thread(lambda files=auth_files: self._show_antigravity_account_selection_dialog(files))
+        
         if len(auth_files) == 1:
             # Only one account, switch to it
             auth_file = auth_files[0]
             self._execute_antigravity_switch(auth_file)
         else:
-            # Multiple accounts - show selection dialog
-            from PyQt6.QtWidgets import QInputDialog
-            account_names = [f.email or f.account or f.name or f.id for f in auth_files]
-            if account_names:
-                account, ok = QInputDialog.getItem(
-                    self,
-                    "Select Account",
-                    "Choose account to switch to:",
-                    account_names,
-                    0,
-                    False
-                )
-                if ok and account:
-                    selected_file = next((f for f in auth_files if (f.email or f.account or f.name or f.id) == account), None)
-                    if selected_file:
-                        self._execute_antigravity_switch(selected_file)
+            # Refresh active account status, then show dialog
+            run_async_coro(refresh_and_show_dialog())
+    
+    def _show_antigravity_account_selection_dialog(self, auth_files):
+        """Show account selection dialog with status information for Antigravity."""
+        from ..dialogs.account_selection_dialog import AccountSelectionDialog
+        dialog = AccountSelectionDialog(
+            self,
+            view_model=self.view_model,
+            auth_files=auth_files,
+            provider=AIProvider.ANTIGRAVITY
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_file = dialog.get_selected_account()
+            if selected_file:
+                self._execute_antigravity_switch(selected_file)
     
     def _execute_antigravity_switch(self, auth_file):
         """Execute Antigravity account switch."""

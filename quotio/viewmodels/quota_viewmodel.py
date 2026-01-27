@@ -691,7 +691,8 @@ class QuotaViewModel:
             
             # Fetch usage stats (matches original implementation: self.usageStats = try await client.fetchUsageStats())
             try:
-                usage_stats = await self.api_client.fetch_usage_stats()
+                # Use shorter timeout for usage stats in refresh cycle too (15s max)
+                usage_stats = await self.api_client.fetch_usage_stats(timeout=15.0)
                 if usage_stats:
                     self.usage_stats = usage_stats
                     log_with_timestamp(
@@ -703,7 +704,12 @@ class QuotaViewModel:
                     log_with_timestamp("Usage stats fetch returned None", "[QuotaViewModel]")
             except Exception as e:
                 # Log error but don't fail - usage stats are optional
-                log_with_timestamp(f"Usage stats fetch failed (optional): {e}", "[QuotaViewModel]")
+                error_msg = str(e)
+                # Only log timeout errors if they're persistent (not just occasional network hiccups)
+                if "timeout" in error_msg.lower() or "TimeoutError" in type(e).__name__:
+                    log_with_timestamp(f"Usage stats fetch timed out (optional, will retry): {error_msg}", "[QuotaViewModel]")
+                else:
+                    log_with_timestamp(f"Usage stats fetch failed (optional): {error_msg}", "[QuotaViewModel]")
                 # Keep existing usage_stats if fetch fails (don't clear it)
             
             # Refresh quotas (this is the critical part)
@@ -1502,11 +1508,41 @@ class QuotaViewModel:
         log_with_timestamp("Starting usage stats polling (10s interval)", "[QuotaViewModel]")
         
         async def poll_loop():
-            """Poll usage stats every 10 seconds."""
+            """Poll usage stats every 10 seconds with improved error handling."""
+            consecutive_errors = 0
+            last_success_time = None
+            backoff_delay = 10  # Start with normal polling interval
+            
             while self._usage_stats_polling_active and self.api_client:
                 try:
-                    # Fetch usage stats (matches original implementation: client.fetchUsageStats())
-                    usage_stats = await self.api_client.fetch_usage_stats()
+                    # Check if proxy is running before attempting to poll
+                    # This prevents timeout errors when proxy is stopped
+                    if not self.proxy_manager.proxy_status.running:
+                        # Proxy is not running - wait longer before checking again
+                        await asyncio.sleep(30)  # Wait 30 seconds when proxy is stopped
+                        consecutive_errors = 0  # Reset error count
+                        backoff_delay = 10  # Reset backoff delay
+                        continue
+                    
+                    # Fetch usage stats with shorter timeout for faster failure
+                    # Use exponential backoff for retries within the same polling cycle
+                    max_retries = 2
+                    retry_delay = 1.0
+                    usage_stats = None
+                    
+                    for attempt in range(max_retries):
+                        try:
+                            usage_stats = await self.api_client.fetch_usage_stats(timeout=8.0)
+                            break  # Success, exit retry loop
+                        except Exception as retry_error:
+                            if attempt < max_retries - 1:
+                                # Wait with exponential backoff before retry
+                                await asyncio.sleep(retry_delay)
+                                retry_delay *= 2  # Exponential backoff: 1s, 2s
+                            else:
+                                # Last attempt failed, re-raise to outer handler
+                                raise retry_error
+                    
                     if usage_stats:
                         # Update usage stats (this will trigger UI updates)
                         self.usage_stats = usage_stats
@@ -1516,13 +1552,75 @@ class QuotaViewModel:
                             f"Usage stats updated: {total_requests} requests, {total_tokens} tokens",
                             "[QuotaViewModel]"
                         )
+                        consecutive_errors = 0  # Reset error count on success
+                        backoff_delay = 10  # Reset backoff delay
+                        last_success_time = asyncio.get_event_loop().time()
                     else:
                         log_with_timestamp("Usage stats fetch returned None", "[QuotaViewModel]")
+                        consecutive_errors = 0  # Reset error count
+                        backoff_delay = 10  # Reset backoff delay
+                        
                 except Exception as e:
-                    # Log error but don't fail - usage stats are optional
-                    log_with_timestamp(f"Usage stats polling error (non-fatal): {e}", "[QuotaViewModel]")
+                    consecutive_errors += 1
+                    error_msg = str(e)
+                    error_type = type(e).__name__
+                    
+                    # Determine if this is a timeout/connection error
+                    is_timeout_error = (
+                        "TimeoutError" in error_type or 
+                        "timeout" in error_msg.lower() or
+                        "Connection error" in error_msg
+                    )
+                    
+                    # Suppress timeout errors when proxy is not running
+                    if is_timeout_error and not self.proxy_manager.proxy_status.running:
+                        # Only log once when proxy is stopped
+                        if consecutive_errors == 1:
+                            log_with_timestamp(
+                                "Usage stats polling paused (proxy not running)",
+                                "[QuotaViewModel]"
+                            )
+                        # Wait longer when proxy is stopped
+                        await asyncio.sleep(30)
+                        consecutive_errors = 0
+                        backoff_delay = 10
+                        continue
+                    
+                    # Calculate adaptive backoff delay based on consecutive errors
+                    # Exponential backoff: 10s, 20s, 40s, max 60s
+                    if consecutive_errors <= 3:
+                        backoff_delay = 10 * (2 ** (consecutive_errors - 1))  # 10s, 20s, 40s
+                    else:
+                        backoff_delay = 60  # Cap at 60 seconds
+                    
+                    # Only log errors occasionally to reduce spam
+                    # Log first error, then every 10th error (once per ~2 minutes with backoff)
+                    should_log = (
+                        consecutive_errors == 1 or 
+                        consecutive_errors % 10 == 0 or
+                        (last_success_time and 
+                         (asyncio.get_event_loop().time() - last_success_time) > 300)  # Log if no success for 5 minutes
+                    )
+                    
+                    if should_log:
+                        # Provide more context in error message
+                        if is_timeout_error:
+                            log_with_timestamp(
+                                f"Usage stats polling timeout (non-fatal, attempt {consecutive_errors}, "
+                                f"backoff: {backoff_delay}s): {error_msg}",
+                                "[QuotaViewModel]"
+                            )
+                        else:
+                            log_with_timestamp(
+                                f"Usage stats polling error (non-fatal, attempt {consecutive_errors}): {error_msg}",
+                                "[QuotaViewModel]"
+                            )
+                    
+                    # Apply backoff delay before next attempt
+                    await asyncio.sleep(backoff_delay)
+                    continue
                 
-                # Wait 10 seconds before next poll
+                # Wait normal interval before next poll (only if no errors)
                 await asyncio.sleep(10)
         
         # Start polling task
