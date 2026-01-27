@@ -7,10 +7,10 @@ from typing import Optional
 
 def open_browser(url: str) -> bool:
     """Open a URL in the default browser (cross-platform).
-    
+
     Args:
         url: URL to open
-        
+
     Returns:
         True if successful, False otherwise
     """

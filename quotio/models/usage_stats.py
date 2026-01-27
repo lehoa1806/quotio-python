@@ -13,7 +13,7 @@ class UsageData:
     total_tokens: Optional[int] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
-    
+
     @property
     def success_rate(self) -> float:
         """Calculate success rate as percentage (0-100)."""
@@ -29,7 +29,7 @@ class UsageStats:
     """Usage statistics from the proxy API."""
     usage: Optional[UsageData] = None
     failed_requests: Optional[int] = None
-    
+
     @classmethod
     def from_dict(cls, data: dict) -> 'UsageStats':
         """Create from dictionary."""
@@ -43,7 +43,7 @@ class UsageStats:
                 input_tokens=data["usage"].get("input_tokens"),
                 output_tokens=data["usage"].get("output_tokens"),
             )
-        
+
         return cls(
             usage=usage_data,
             failed_requests=data.get("failed_requests"),

@@ -20,7 +20,7 @@ class CLIAgent(str, Enum):
     AMP_CLI = "amp"
     OPEN_CODE = "opencode"
     FACTORY_DROID = "factory-droid"
-    
+
     @property
     def display_name(self) -> str:
         """Human-readable display name."""
@@ -33,7 +33,7 @@ class CLIAgent(str, Enum):
             self.FACTORY_DROID: "Factory Droid",
         }
         return names.get(self, self.value)
-    
+
     @property
     def description(self) -> str:
         """Agent description."""
@@ -46,7 +46,7 @@ class CLIAgent(str, Enum):
             self.FACTORY_DROID: "Factory's AI coding agent",
         }
         return descriptions.get(self, "")
-    
+
     @property
     def config_type(self) -> AgentConfigType:
         """Configuration type."""
@@ -59,7 +59,7 @@ class CLIAgent(str, Enum):
             self.FACTORY_DROID: AgentConfigType.FILE,
         }
         return types.get(self, AgentConfigType.FILE)
-    
+
     @property
     def binary_names(self) -> list[str]:
         """Binary names for detection."""
@@ -72,7 +72,7 @@ class CLIAgent(str, Enum):
             self.FACTORY_DROID: ["droid", "factory-droid", "fd"],
         }
         return names.get(self, [])
-    
+
     @property
     def config_paths(self) -> list[str]:
         """Configuration file paths."""
@@ -85,7 +85,7 @@ class CLIAgent(str, Enum):
             self.FACTORY_DROID: ["~/.factory/config.json"],
         }
         return paths.get(self, [])
-    
+
     @property
     def docs_url(self) -> Optional[str]:
         """Documentation URL."""
@@ -98,7 +98,7 @@ class CLIAgent(str, Enum):
             self.FACTORY_DROID: "https://github.com/github/github-spark",
         }
         return urls.get(self)
-    
+
     @property
     def system_icon(self) -> str:
         """System icon name."""

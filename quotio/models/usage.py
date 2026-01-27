@@ -12,7 +12,7 @@ class UsageData(BaseModel):
     total_tokens: Optional[int] = Field(None, alias="total_tokens")
     input_tokens: Optional[int] = Field(None, alias="input_tokens")
     output_tokens: Optional[int] = Field(None, alias="output_tokens")
-    
+
     @property
     def success_rate(self) -> float:
         """Calculate success rate percentage."""

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 class AIProvider(str, Enum):
     """Supported AI providers."""
-    
+
     GEMINI = "gemini-cli"
     CLAUDE = "claude"
     CODEX = "codex"
@@ -21,7 +21,7 @@ class AIProvider(str, Enum):
     TRAE = "trae"
     GLM = "glm"
     WARP = "warp"
-    
+
     @property
     def display_name(self) -> str:
         """Human-readable display name."""
@@ -41,7 +41,7 @@ class AIProvider(str, Enum):
             self.WARP: "Warp",
         }
         return names.get(self, self.value)
-    
+
     @property
     def icon_name(self) -> str:
         """SF Symbol or icon name."""
@@ -61,7 +61,7 @@ class AIProvider(str, Enum):
             self.WARP: "terminal.fill",
         }
         return icons.get(self, "questionmark.circle")
-    
+
     @property
     def color_hex(self) -> str:
         """Provider color in hex format."""
@@ -81,7 +81,7 @@ class AIProvider(str, Enum):
             self.WARP: "01E5FF",
         }
         return colors.get(self, "000000")
-    
+
     @property
     def oauth_endpoint(self) -> str:
         """OAuth endpoint path."""
@@ -101,7 +101,7 @@ class AIProvider(str, Enum):
             self.WARP: "",
         }
         return endpoints.get(self, "")
-    
+
     @property
     def menu_bar_symbol(self) -> str:
         """Short symbol for menu bar display."""
@@ -121,7 +121,7 @@ class AIProvider(str, Enum):
             self.WARP: "W",
         }
         return symbols.get(self, "?")
-    
+
     @property
     def supports_quota_only_mode(self) -> bool:
         """Whether this provider supports quota tracking in quota-only mode."""
@@ -136,28 +136,28 @@ class AIProvider(str, Enum):
             self.GLM,
             self.WARP,
         }
-    
+
     @property
     def uses_browser_auth(self) -> bool:
         """Whether this provider uses browser cookies for auth."""
         return self in {self.CURSOR, self.TRAE}
-    
+
     @property
     def uses_cli_quota(self) -> bool:
         """Whether this provider uses CLI commands for quota."""
         return self in {self.CLAUDE, self.CODEX, self.GEMINI}
-    
+
     @property
     def supports_manual_auth(self) -> bool:
         """Whether this provider can be added manually."""
         # Cursor, Trae, GLM are excluded
         return self not in {self.CURSOR, self.TRAE, self.GLM}
-    
+
     @property
     def uses_api_key_auth(self) -> bool:
         """Whether this provider uses API key authentication."""
         return self in {self.GLM, self.WARP}
-    
+
     @property
     def is_quota_tracking_only(self) -> bool:
         """Whether this provider is quota-tracking only (not a real provider)."""

@@ -23,7 +23,7 @@ class SubscriptionTier:
     upgrade_subscription_text: Optional[str] = None
     upgrade_subscription_type: Optional[str] = None
     user_defined_cloudaicompanion_project: Optional[bool] = None
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SubscriptionTier':
         """Create from dictionary."""
@@ -35,7 +35,7 @@ class SubscriptionTier:
                     show_notice=pn_data.get("show_notice"),
                     notice_text=pn_data.get("notice_text"),
                 )
-        
+
         return cls(
             id=data.get("id", ""),
             name=data.get("name", ""),
@@ -58,33 +58,33 @@ class SubscriptionInfo:
     gcp_managed: Optional[bool] = None
     upgrade_subscription_uri: Optional[str] = None
     paid_tier: Optional[SubscriptionTier] = None
-    
+
     @property
     def effective_tier(self) -> Optional[SubscriptionTier]:
         """Get the effective tier - prioritize paidTier over currentTier."""
         return self.paid_tier or self.current_tier
-    
+
     @property
     def tier_display_name(self) -> str:
         """Display name for the tier."""
         if self.effective_tier:
             return self.effective_tier.name
         return "Unknown"
-    
+
     @property
     def tier_description(self) -> str:
         """Description of the tier."""
         if self.effective_tier:
             return self.effective_tier.description
         return ""
-    
+
     @property
     def tier_id(self) -> str:
         """ID of the tier."""
         if self.effective_tier:
             return self.effective_tier.id
         return "unknown"
-    
+
     @property
     def is_paid_tier(self) -> bool:
         """Check if this is a paid tier."""
@@ -92,21 +92,21 @@ class SubscriptionInfo:
             return False
         tier_id = self.effective_tier.id.lower()
         return "pro" in tier_id or "ultra" in tier_id
-    
+
     @property
     def can_upgrade(self) -> bool:
         """Check if user can upgrade."""
         if not self.effective_tier:
             return False
         return self.effective_tier.upgrade_subscription_uri is not None
-    
+
     @property
     def upgrade_url(self) -> Optional[str]:
         """Get upgrade URL if available."""
         if not self.effective_tier:
             return None
         return self.effective_tier.upgrade_subscription_uri
-    
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'SubscriptionInfo':
         """Create from dictionary."""
@@ -114,19 +114,19 @@ class SubscriptionInfo:
         if data.get("current_tier"):
             if isinstance(data["current_tier"], dict):
                 current_tier = SubscriptionTier.from_dict(data["current_tier"])
-        
+
         allowed_tiers = None
         if data.get("allowed_tiers"):
             if isinstance(data["allowed_tiers"], list):
-                allowed_tiers = [SubscriptionTier.from_dict(t) if isinstance(t, dict) else None 
+                allowed_tiers = [SubscriptionTier.from_dict(t) if isinstance(t, dict) else None
                                 for t in data["allowed_tiers"]]
                 allowed_tiers = [t for t in allowed_tiers if t is not None]
-        
+
         paid_tier = None
         if data.get("paid_tier"):
             if isinstance(data["paid_tier"], dict):
                 paid_tier = SubscriptionTier.from_dict(data["paid_tier"])
-        
+
         return cls(
             current_tier=current_tier,
             allowed_tiers=allowed_tiers,

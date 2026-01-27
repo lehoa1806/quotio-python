@@ -30,7 +30,7 @@ class RequestLog:
     request_size: Optional[int] = None  # bytes
     response_size: Optional[int] = None  # bytes
     error_message: Optional[str] = None
-    
+
     @property
     def status(self) -> RequestStatus:
         """Get request status."""
@@ -39,7 +39,7 @@ class RequestLog:
         if self.status_code and 200 <= self.status_code < 300:
             return RequestStatus.SUCCESS
         return RequestStatus.ERROR
-    
+
     @property
     def total_tokens(self) -> Optional[int]:
         """Total tokens (input + output)."""
@@ -62,21 +62,21 @@ class RequestStats:
     total_response_size: int = 0
     requests_by_provider: Dict[str, int] = field(default_factory=dict)
     requests_by_model: Dict[str, int] = field(default_factory=dict)
-    
+
     @property
     def success_rate(self) -> float:
         """Success rate as percentage."""
         if self.total_requests == 0:
             return 0.0
         return (self.successful_requests / self.total_requests) * 100.0
-    
+
     @property
     def average_duration_ms(self) -> float:
         """Average request duration in milliseconds."""
         if self.total_requests == 0:
             return 0.0
         return self.total_duration_ms / self.total_requests
-    
+
     @property
     def average_tokens_per_request(self) -> float:
         """Average tokens per request."""

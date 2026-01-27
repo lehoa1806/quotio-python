@@ -8,7 +8,7 @@ class ProxyStatus(BaseModel):
     """Proxy server status."""
     running: bool = False
     port: int = 8317
-    
+
     @property
     def endpoint(self) -> str:
         """Proxy endpoint URL."""

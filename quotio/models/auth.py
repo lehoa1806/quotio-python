@@ -43,7 +43,7 @@ class AuthFile(BaseModel):
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
     last_refresh: Optional[str] = None
-    
+
     @property
     def provider_type(self) -> Optional[AIProvider]:
         """Get AIProvider enum from provider string."""
@@ -54,7 +54,7 @@ class AuthFile(BaseModel):
             return AIProvider(self.provider)
         except ValueError:
             return None
-    
+
     @property
     def quota_lookup_key(self) -> str:
         """Key used for quota lookup."""
@@ -62,14 +62,14 @@ class AuthFile(BaseModel):
             return self.email
         if self.account and self.account.strip():
             return self.account
-        
+
         key = self.name
         if key.startswith("github-copilot-"):
             key = key[len("github-copilot-"):]
         if key.endswith(".json"):
             key = key[:-5]
         return key
-    
+
     @property
     def is_ready(self) -> bool:
         """Whether this auth file is ready to use."""
@@ -78,7 +78,7 @@ class AuthFile(BaseModel):
             and not self.disabled
             and not self.unavailable
         )
-    
+
     @property
     def status_color(self) -> str:
         """Status color for UI."""

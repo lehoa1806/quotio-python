@@ -13,16 +13,16 @@ from ...models.providers import AIProvider
 
 class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
     """Fetches quota data from Claude Code OAuth API."""
-    
+
     USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-    
+
     def __init__(self, api_client=None):
         """Initialize the fetcher."""
         super().__init__(api_client)
         self.auth_dir = Path.home() / ".cli-proxy-api"
         self._cache: Dict[str, tuple] = {}  # account_key -> (data, timestamp)
         self._cache_ttl = 300  # 5 minutes
-    
+
     async def fetch_quota(self, account_key: str) -> Optional[ProviderQuotaData]:
         """Fetch Claude quota for an account."""
         # Check cache
@@ -31,17 +31,17 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
             import time
             if time.time() - timestamp < self._cache_ttl:
                 return data
-        
+
         # Find auth file
         auth_file = self._find_auth_file(account_key)
         if not auth_file:
             return None
-        
+
         # Extract access token
         access_token = auth_file.get("access_token")
         if not access_token:
             return None
-        
+
         # Fetch from API
         try:
             quota_data = await self._fetch_from_api(access_token)
@@ -50,12 +50,12 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
             return quota_data
         except Exception:
             return None
-    
+
     def _find_auth_file(self, account_key: str) -> Optional[dict]:
         """Find auth file for account."""
         if not self.auth_dir.exists():
             return None
-        
+
         # Look for claude auth files
         for file_path in self.auth_dir.glob("*claude*.json"):
             try:
@@ -67,9 +67,9 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                         return data
             except Exception:
                 continue
-        
+
         return None
-    
+
     async def _fetch_from_api(self, access_token: str) -> Optional[ProviderQuotaData]:
         """Fetch quota from Anthropic OAuth API (matches original implementation)."""
         headers = {
@@ -77,10 +77,10 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
             "Accept": "application/json",
             "anthropic-beta": "oauth-2025-04-20",  # Required header for OAuth API
         }
-        
+
         # Use proxy if configured
         proxy_url = self._proxy_url if self._proxy_url else None
-        
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -94,12 +94,12 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                         # Token expired or invalid - needs re-authentication
                         # Return None to indicate auth error (matches original behavior)
                         return None
-                    
+
                     if response.status != 200:
                         return None
-                    
+
                     data = await response.json()
-                    
+
                     # Check for API error response
                     if data.get("type") == "error":
                         error_obj = data.get("error", {})
@@ -108,20 +108,20 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                             return None
                         # Other API error
                         return None
-                    
+
                     return self._parse_quota_response(data)
         except Exception as e:
             print(f"[ClaudeCodeQuotaFetcher] Network error: {e}")
             return None
-    
+
     def _parse_quota_response(self, data: dict) -> ProviderQuotaData:
         """Parse quota response from Anthropic OAuth API.
-        
+
         Matches original implementation: parses five_hour, seven_day,
         seven_day_sonnet, seven_day_opus, and extra_usage.
         """
         models = []
-        
+
         # Parse five_hour quota (5-hour session window)
         if "five_hour" in data:
             q = data["five_hour"]
@@ -131,7 +131,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 utilization = float(utilization)
             remaining = max(0, min(100, 100 - utilization))
             resets_at = q.get("resets_at", "")
-            
+
             models.append(QuotaModel(
                 name="five-hour-session",
                 percentage=remaining,
@@ -139,7 +139,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 limit=None,
                 remaining=None,
             ))
-        
+
         # Parse seven_day quota (7-day weekly window)
         if "seven_day" in data:
             q = data["seven_day"]
@@ -148,7 +148,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 utilization = float(utilization)
             remaining = max(0, min(100, 100 - utilization))
             resets_at = q.get("resets_at", "")
-            
+
             models.append(QuotaModel(
                 name="seven-day-weekly",
                 percentage=remaining,
@@ -156,7 +156,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 limit=None,
                 remaining=None,
             ))
-        
+
         # Parse seven_day_sonnet quota
         if "seven_day_sonnet" in data:
             q = data["seven_day_sonnet"]
@@ -165,7 +165,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 utilization = float(utilization)
             remaining = max(0, min(100, 100 - utilization))
             resets_at = q.get("resets_at", "")
-            
+
             models.append(QuotaModel(
                 name="seven-day-sonnet",
                 percentage=remaining,
@@ -173,7 +173,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 limit=None,
                 remaining=None,
             ))
-        
+
         # Parse seven_day_opus quota
         if "seven_day_opus" in data:
             q = data["seven_day_opus"]
@@ -182,7 +182,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 utilization = float(utilization)
             remaining = max(0, min(100, 100 - utilization))
             resets_at = q.get("resets_at", "")
-            
+
             models.append(QuotaModel(
                 name="seven-day-opus",
                 percentage=remaining,
@@ -190,7 +190,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                 limit=None,
                 remaining=None,
             ))
-        
+
         # Parse extra_usage (only if enabled)
         if "extra_usage" in data:
             extra = data["extra_usage"]
@@ -203,7 +203,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                     remaining = max(0, min(100, 100 - utilization))
                     used_credits = extra.get("used_credits")
                     monthly_limit = extra.get("monthly_limit")
-                    
+
                     models.append(QuotaModel(
                         name="extra-usage",
                         percentage=remaining,
@@ -211,7 +211,7 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                         limit=int(monthly_limit) if monthly_limit is not None else None,
                         remaining=None,
                     ))
-        
+
         return ProviderQuotaData(
             models=models,
             account_email=None,
@@ -219,14 +219,14 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
             last_updated=None,
             plan_type=None,
         )
-    
+
     async def fetch_all_quotas(self) -> Dict[str, ProviderQuotaData]:
         """Fetch all Claude quotas."""
         results = {}
-        
+
         if not self.auth_dir.exists():
             return results
-        
+
         # Find all claude auth files
         for file_path in self.auth_dir.glob("*claude*.json"):
             try:
@@ -234,12 +234,12 @@ class ClaudeCodeQuotaFetcher(BaseQuotaFetcher):
                     data = json.load(f)
                     email = data.get("email") or data.get("account") or file_path.stem
                     access_token = data.get("access_token")
-                    
+
                     if access_token:
                         quota = await self._fetch_from_api(access_token)
                         if quota:
                             results[email] = quota
             except Exception:
                 continue
-        
+
         return results
