@@ -82,11 +82,13 @@ class ProvidersScreen(QWidget):
         button_layout.addStretch()
         layout.addLayout(button_layout)
         
-        # Status label
+        # Status label (copyable)
         self.status_label = QLabel("")
         layout.addWidget(self.status_label)
+        from ..utils import make_label_copyable
+        make_label_copyable(self.status_label)
         
-        # Message area for non-blocking feedback
+        # Message area for non-blocking feedback (copyable)
         self.message_label = QLabel("")
         self.message_label.setWordWrap(True)
         self.message_label.setStyleSheet("""
@@ -100,6 +102,7 @@ class ProvidersScreen(QWidget):
         """)
         self.message_label.hide()  # Hidden by default
         layout.addWidget(self.message_label)
+        make_label_copyable(self.message_label)
         
         # Update display
         self._update_display()

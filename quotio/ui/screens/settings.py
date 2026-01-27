@@ -260,6 +260,9 @@ class SettingsScreen(QWidget):
         self.proxy_status_label = QLabel("Stopped")
         self.proxy_status_label.setStyleSheet("font-size: 12px; color: #666;")
         status_value_layout.addWidget(self.proxy_status_label)
+        # Make proxy status label copyable
+        from ..utils import make_label_copyable
+        make_label_copyable(self.proxy_status_label)
         status_value_layout.addStretch()
         
         # Control button next to status

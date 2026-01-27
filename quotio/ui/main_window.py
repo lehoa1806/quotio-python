@@ -36,9 +36,10 @@ try:
         QLabel,
         QPushButton,
         QTabWidget,
+        QMenu,
     )
-    from PyQt6.QtCore import Qt, QTimer
-    from PyQt6.QtGui import QIcon
+    from PyQt6.QtCore import Qt, QTimer, QPoint
+    from PyQt6.QtGui import QIcon, QAction
     PYQT_AVAILABLE = True
 except ImportError:
     PYQT_AVAILABLE = False
@@ -53,7 +54,7 @@ _loop_thread = None  # Thread running the event loop
 _loop_running = False  # Flag indicating if loop is currently running
 
 
-def setup_async_loop():
+def setup_async_loop(exception_handler=None):
     """
     Set up asyncio event loop for Qt integration.
     
@@ -66,8 +67,12 @@ def setup_async_loop():
     1. Check if loop already exists and is running (idempotent)
     2. Create new asyncio event loop
     3. Enable debug mode if requested (for troubleshooting async issues)
-    4. Start the loop in a daemon thread (dies when main thread exits)
-    5. Loop runs forever, processing async tasks scheduled via run_async_coro()
+    4. Set exception handler if provided (for logging async exceptions)
+    5. Start the loop in a daemon thread (dies when main thread exits)
+    6. Loop runs forever, processing async tasks scheduled via run_async_coro()
+    
+    Args:
+        exception_handler: Optional exception handler function for asyncio exceptions
     
     Returns:
         The asyncio event loop instance
@@ -87,6 +92,10 @@ def setup_async_loop():
     # Debug mode helps catch async/await issues and unawaited coroutines
     if os.getenv('ASYNCIO_DEBUG') == '1' or os.getenv('PYTHONASYNCIODEBUG') == '1':
         _async_loop.set_debug(True)
+    
+    # Set exception handler if provided
+    if exception_handler:
+        _async_loop.set_exception_handler(exception_handler)
     
     # Start event loop in a separate thread
     # This allows Qt UI to remain responsive while async operations run
@@ -249,6 +258,14 @@ class MainWindow:
         # It manages: proxy status, quotas, auth files, settings, etc.
         self.view_model = QuotaViewModel()
         
+        # Get asyncio exception handler from main module if available
+        exception_handler = None
+        try:
+            from ..main import _asyncio_exception_handler
+            exception_handler = _asyncio_exception_handler
+        except (ImportError, AttributeError):
+            pass
+        
         if PYQT_AVAILABLE:
             # Create Qt application - required for all Qt widgets
             self.app = QApplication(sys.argv)
@@ -261,7 +278,8 @@ class MainWindow:
             
             # Set up async event loop in background thread
             # This allows async operations without blocking the Qt UI
-            setup_async_loop()
+            # Pass exception handler if available
+            setup_async_loop(exception_handler=exception_handler)
             
             # Create main window widget
             self.window = QMainWindow()
@@ -299,7 +317,7 @@ class MainWindow:
         self.tabs = QTabWidget()
         central_layout.addWidget(self.tabs)
         
-        # Status bar at bottom
+        # Status bar at bottom (copyable)
         self.status_bar = QLabel("Ready")
         self.status_bar.setStyleSheet("""
             QLabel {
@@ -311,6 +329,14 @@ class MainWindow:
             }
         """)
         self.status_bar.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        # Enable text selection for copying
+        self.status_bar.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse | 
+            Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        # Add context menu for copy
+        self.status_bar.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.status_bar.customContextMenuRequested.connect(self._on_status_bar_context_menu)
         central_layout.addWidget(self.status_bar)
         
         self.window.setCentralWidget(central_widget)
@@ -415,6 +441,53 @@ class MainWindow:
             # Log unexpected errors but don't crash
             print(f"[MainWindow] Error updating status message: {e}")
             pass
+    
+    def _on_status_bar_context_menu(self, position: QPoint):
+        """Show context menu for status bar with copy option."""
+        if not self.status_bar:
+            return
+        
+        menu = QMenu(self.status_bar)
+        
+        # Copy action
+        copy_action = QAction("Copy", self.status_bar)
+        copy_action.triggered.connect(self._copy_status_bar_text)
+        menu.addAction(copy_action)
+        
+        # Select All action
+        select_all_action = QAction("Select All", self.status_bar)
+        select_all_action.triggered.connect(self._select_all_status_bar_text)
+        menu.addAction(select_all_action)
+        
+        # Show menu at cursor position
+        menu.exec(self.status_bar.mapToGlobal(position))
+    
+    def _copy_status_bar_text(self):
+        """Copy status bar text to clipboard."""
+        if not self.status_bar:
+            return
+        
+        clipboard = QApplication.clipboard()
+        text = self.status_bar.text()
+        if text:
+            clipboard.setText(text)
+            # Show brief feedback
+            original_text = self.status_bar.text()
+            self.status_bar.setText(f"Copied: {text[:50]}..." if len(text) > 50 else f"Copied: {text}")
+            QTimer.singleShot(2000, lambda: self.status_bar.setText(original_text))
+    
+    def _select_all_status_bar_text(self):
+        """Select all text in status bar."""
+        if not self.status_bar:
+            return
+        
+        # QLabel doesn't have selectAll(), but we can select text programmatically
+        # by setting the selection through text interaction
+        self.status_bar.setFocus()
+        # For QLabel, we need to use text selection flags
+        # The text is already selectable, user can select it manually
+        # This action just focuses the label so user can use Ctrl+A
+        self.status_bar.setFocus()
     
     def _initialize_viewmodel(self):
         """Initialize the view model asynchronously."""

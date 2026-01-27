@@ -97,6 +97,9 @@ class DashboardScreen(QWidget):
         self.status_label = QLabel("Status: Not running")
         self.status_label.setStyleSheet("font-size: 14px; font-weight: 500;")
         status_row.addWidget(self.status_label)
+        # Make status label copyable
+        from ..utils import make_label_copyable
+        make_label_copyable(self.status_label)
         
         self.port_label = QLabel("")
         self.port_label.setStyleSheet("font-size: 14px; font-weight: 500; color: #666;")

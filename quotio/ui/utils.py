@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 from typing import Optional, Callable
 from datetime import datetime
-from PyQt6.QtWidgets import QMessageBox, QWidget, QApplication
-from PyQt6.QtCore import Qt, QTimer, QThread, QMetaObject
+from PyQt6.QtWidgets import QMessageBox, QWidget, QApplication, QMenu
+from PyQt6.QtCore import Qt, QTimer, QThread, QMetaObject, QPoint
+from PyQt6.QtGui import QAction
 try:
     from PyQt6.QtCore import pyqtSlot
 except ImportError:
@@ -454,3 +455,59 @@ def log_with_timestamp(message: str, prefix: str = ""):
         except Exception as e:
             # If writing fails, just print to stderr
             print(f"Warning: Could not write to log file: {e}", file=sys.stderr)
+
+
+def make_label_copyable(label: QWidget):
+    """
+    Make a QLabel copyable by enabling text selection and adding context menu.
+    
+    Args:
+        label: The QLabel widget to make copyable
+    """
+    from PyQt6.QtWidgets import QLabel
+    
+    if not isinstance(label, QLabel):
+        return
+    
+    # Enable text selection
+    label.setTextInteractionFlags(
+        Qt.TextInteractionFlag.TextSelectableByMouse | 
+        Qt.TextInteractionFlag.TextSelectableByKeyboard
+    )
+    
+    # Add context menu for copy
+    label.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    
+    def _on_context_menu(position: QPoint):
+        """Show context menu with copy option."""
+        menu = QMenu(label)
+        
+        # Copy action
+        copy_action = QAction("Copy", label)
+        copy_action.triggered.connect(lambda: _copy_text(label))
+        menu.addAction(copy_action)
+        
+        # Select All action
+        select_all_action = QAction("Select All", label)
+        select_all_action.triggered.connect(lambda: _select_all(label))
+        menu.addAction(select_all_action)
+        
+        # Show menu at cursor position
+        menu.exec(label.mapToGlobal(position))
+    
+    def _copy_text(widget: QLabel):
+        """Copy label text to clipboard."""
+        clipboard = QApplication.clipboard()
+        text = widget.text()
+        if text:
+            clipboard.setText(text)
+            # Show brief feedback
+            original_text = widget.text()
+            widget.setText(f"Copied: {text[:50]}..." if len(text) > 50 else f"Copied: {text}")
+            QTimer.singleShot(2000, lambda: widget.setText(original_text))
+    
+    def _select_all(widget: QLabel):
+        """Focus the label for text selection."""
+        widget.setFocus()
+    
+    label.customContextMenuRequested.connect(_on_context_menu)
