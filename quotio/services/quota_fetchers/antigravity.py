@@ -112,9 +112,7 @@ class AntigravityQuotaFetcher(BaseQuotaFetcher):
         """Fetch subscription info to get project ID and subscription details."""
         # Check cache first
         if access_token in self._subscription_cache:
-            cached = self._subscription_cache[access_token]
-            print(f"[Antigravity] Using cached subscription info for {email or 'account'}")
-            return cached
+            return self._subscription_cache[access_token]
 
         headers = {
             "Authorization": f"Bearer {access_token}",
@@ -130,11 +128,6 @@ class AntigravityQuotaFetcher(BaseQuotaFetcher):
 
         proxy_url = self._proxy_url if self._proxy_url else None
 
-        account_label = email or "account"
-        print(f"[Antigravity] Fetching subscription info for {account_label}...")
-        print(f"[Antigravity] URL: {self.LOAD_PROJECT_API_URL}")
-        print(f"[Antigravity] Request payload: {json.dumps(payload, indent=2)}")
-
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -144,59 +137,21 @@ class AntigravityQuotaFetcher(BaseQuotaFetcher):
                     proxy=proxy_url,
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as response:
-                    print(f"[Antigravity] Response status for {account_label}: {response.status}")
-                    
                     if response.status != 200:
-                        # Try to read error response
-                        try:
-                            error_text = await response.text()
-                            print(f"[Antigravity] Error response body for {account_label}: {error_text}")
-                        except Exception:
-                            pass
                         return None
 
                     result = await response.json()
-                    # Print raw response for debugging
-                    print(f"[Antigravity] ===== RAW SUBSCRIPTION API RESPONSE FOR {account_label} =====")
-                    print(json.dumps(result, indent=2))
-                    print(f"[Antigravity] ===== END RAW RESPONSE FOR {account_label} =====")
-                    
                     # Cache the result
                     self._subscription_cache[access_token] = result
                     return result
         except Exception as e:
-            print(f"[Antigravity] Exception fetching subscription info for {account_label}: {e}")
-            import traceback
-            traceback.print_exc()
             return None
 
     def _parse_subscription_info(self, subscription_data: dict, email: Optional[str] = None) -> Optional[SubscriptionInfo]:
         """Parse subscription info from API response."""
-        account_label = email or "account"
-        print(f"[Antigravity] Parsing subscription data for {account_label}...")
-        print(f"[Antigravity] Subscription data keys: {list(subscription_data.keys())}")
         try:
-            subscription_info = SubscriptionInfo.from_dict(subscription_data)
-            if subscription_info:
-                print(f"[Antigravity] Successfully parsed subscription info for {account_label}:")
-                print(f"  - Tier display name: {subscription_info.tier_display_name}")
-                print(f"  - Tier ID: {subscription_info.tier_id}")
-                print(f"  - Is paid tier: {subscription_info.is_paid_tier}")
-                if subscription_info.effective_tier:
-                    print(f"  - Effective tier name: {subscription_info.effective_tier.name}")
-                    print(f"  - Effective tier ID: {subscription_info.effective_tier.id}")
-                    print(f"  - Effective tier description: {subscription_info.effective_tier.description}")
-                if subscription_info.current_tier:
-                    print(f"  - Current tier name: {subscription_info.current_tier.name}")
-                    print(f"  - Current tier ID: {subscription_info.current_tier.id}")
-                if subscription_info.paid_tier:
-                    print(f"  - Paid tier name: {subscription_info.paid_tier.name}")
-                    print(f"  - Paid tier ID: {subscription_info.paid_tier.id}")
-            return subscription_info
-        except Exception as e:
-            print(f"[Antigravity] Error parsing subscription info for {account_label}: {e}")
-            import traceback
-            traceback.print_exc()
+            return SubscriptionInfo.from_dict(subscription_data)
+        except Exception:
             return None
 
     async def _fetch_project_id(self, access_token: str) -> Optional[str]:
@@ -509,22 +464,12 @@ class AntigravityQuotaFetcher(BaseQuotaFetcher):
                             quota.account_email = email
 
                     # Fetch subscription info
-                    print(f"[Antigravity] ===== Processing account: {email} =====")
                     subscription_data = await self._fetch_subscription_info(access_token, email=email)
                     if subscription_data:
                         subscription_info = self._parse_subscription_info(subscription_data, email=email)
                         if subscription_info:
                             subscriptions[email] = subscription_info
-                            print(f"[Antigravity] ✓ Successfully stored subscription info for {email}: tier={subscription_info.tier_display_name}")
-                        else:
-                            print(f"[Antigravity] ✗ Failed to parse subscription info for {email}")
-                    else:
-                        print(f"[Antigravity] ✗ No subscription data returned for {email}")
-                    print(f"[Antigravity] ===== Finished processing account: {email} =====")
-            except Exception as e:
-                print(f"[Antigravity] Error processing {file_path}: {e}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
                 continue
 
         return quotas, subscriptions

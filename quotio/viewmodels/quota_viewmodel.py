@@ -1600,6 +1600,7 @@ class QuotaViewModel:
             """Poll usage stats every 10 seconds with improved error handling."""
             consecutive_errors = 0
             last_success_time = None
+            first_timeout_time = None  # Track when first timeout occurred
             backoff_delay = 10  # Start with normal polling interval
 
             while self._usage_stats_polling_active and self.api_client:
@@ -1610,10 +1611,11 @@ class QuotaViewModel:
                         # Proxy is not running - wait longer before checking again
                         await asyncio.sleep(30)  # Wait 30 seconds when proxy is stopped
                         consecutive_errors = 0  # Reset error count
+                        first_timeout_time = None  # Reset timeout tracking
                         backoff_delay = 10  # Reset backoff delay
                         continue
 
-                    # Fetch usage stats with shorter timeout for faster failure
+                    # Fetch usage stats with extended timeout
                     # Use exponential backoff for retries within the same polling cycle
                     max_retries = 2
                     retry_delay = 1.0
@@ -1621,7 +1623,7 @@ class QuotaViewModel:
 
                     for attempt in range(max_retries):
                         try:
-                            usage_stats = await self.api_client.fetch_usage_stats(timeout=8.0)
+                            usage_stats = await self.api_client.fetch_usage_stats(timeout=20.0)  # Extended from 8.0s to 20.0s
                             break  # Success, exit retry loop
                         except Exception as retry_error:
                             if attempt < max_retries - 1:
@@ -1642,11 +1644,13 @@ class QuotaViewModel:
                             "[QuotaViewModel]"
                         )
                         consecutive_errors = 0  # Reset error count on success
+                        first_timeout_time = None  # Reset timeout tracking on success
                         backoff_delay = 10  # Reset backoff delay
                         last_success_time = asyncio.get_event_loop().time()
                     else:
                         log_with_timestamp("Usage stats fetch returned None", "[QuotaViewModel]")
                         consecutive_errors = 0  # Reset error count
+                        first_timeout_time = None  # Reset timeout tracking
                         backoff_delay = 10  # Reset backoff delay
 
                 except Exception as e:
@@ -1661,6 +1665,10 @@ class QuotaViewModel:
                         "Connection error" in error_msg
                     )
 
+                    # Track when first timeout occurred
+                    if is_timeout_error and first_timeout_time is None:
+                        first_timeout_time = asyncio.get_event_loop().time()
+
                     # Suppress timeout errors when proxy is not running
                     if is_timeout_error and not self.proxy_manager.proxy_status.running:
                         # Only log once when proxy is stopped
@@ -1672,6 +1680,7 @@ class QuotaViewModel:
                         # Wait longer when proxy is stopped
                         await asyncio.sleep(30)
                         consecutive_errors = 0
+                        first_timeout_time = None  # Reset timeout tracking
                         backoff_delay = 10
                         continue
 
@@ -1679,20 +1688,22 @@ class QuotaViewModel:
                     # Only restart if:
                     # 1. We're in local proxy mode
                     # 2. Auto-restart is enabled
-                    # 3. We have multiple consecutive timeout errors (3+)
+                    # 3. We've had timeout errors for 5 minutes continuously
                     # 4. Proxy status says it's running but we can't connect (it may have crashed)
                     # 5. We haven't tried to restart recently (throttle to prevent loops)
+                    current_time = asyncio.get_event_loop().time()
+                    timeout_duration = (current_time - first_timeout_time) if first_timeout_time else 0
+                    
                     if (is_timeout_error and
                         self.mode_manager.is_local_proxy_mode and
                         self.settings.get("autoRestartProxy", False) and
-                        consecutive_errors >= 3 and
+                        timeout_duration >= 300 and  # 5 minutes of consecutive timeouts
                         self.proxy_manager.proxy_status.running):
                         # Check if we've restarted recently (throttle: max once per 5 minutes)
-                        current_time = asyncio.get_event_loop().time()
                         if (self._last_proxy_restart_attempt is None or
                             (current_time - self._last_proxy_restart_attempt) >= 300):  # 5 minutes
                             log_with_timestamp(
-                                f"Proxy appears unresponsive after {consecutive_errors} consecutive timeouts. Attempting auto-restart...",
+                                f"Proxy appears unresponsive after {timeout_duration:.0f}s of consecutive timeouts. Attempting auto-restart...",
                                 "[QuotaViewModel]"
                             )
                             self._last_proxy_restart_attempt = current_time
@@ -1719,6 +1730,7 @@ class QuotaViewModel:
                                 await asyncio.sleep(5)
                                 # Reset error count after restart attempt
                                 consecutive_errors = 0
+                                first_timeout_time = None  # Reset timeout tracking
                                 backoff_delay = 10
                                 continue
                             except Exception as restart_error:

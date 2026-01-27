@@ -31,31 +31,23 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
     def _read_oauth_creds(self) -> Optional[dict]:
         """Read Gemini CLI OAuth credentials."""
         if not self.oauth_file.exists():
-            print(f"[GeminiCLIQuotaFetcher] OAuth file does not exist: {self.oauth_file}")
             return None
 
         try:
             with open(self.oauth_file, "r") as f:
-                data = json.load(f)
-                print(f"[GeminiCLIQuotaFetcher] Successfully read OAuth file: {self.oauth_file}")
-                return data
-        except Exception as e:
-            print(f"[GeminiCLIQuotaFetcher] Error reading OAuth file: {e}")
+                return json.load(f)
+        except Exception:
             return None
 
     def _read_accounts_file(self) -> Optional[dict]:
         """Read Gemini CLI accounts file."""
         if not self.accounts_file.exists():
-            print(f"[GeminiCLIQuotaFetcher] Accounts file does not exist: {self.accounts_file}")
             return None
 
         try:
             with open(self.accounts_file, "r") as f:
-                data = json.load(f)
-                print(f"[GeminiCLIQuotaFetcher] Successfully read accounts file: {self.accounts_file}")
-                return data
-        except Exception as e:
-            print(f"[GeminiCLIQuotaFetcher] Error reading accounts file: {e}")
+                return json.load(f)
+        except Exception:
             return None
 
     def _decode_jwt(self, token: str) -> Optional[dict]:
@@ -164,32 +156,16 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
         """
         results = {}
 
-        print(f"[GeminiCLIQuotaFetcher] fetch_all_quotas() called")
-
-        # Check if Gemini CLI is installed (matches Original: guard await isInstalled())
-        # Note: We can't easily check installation here, so we'll just check for auth files
-        # If auth files exist, assume CLI is installed/configured
-
-        print(f"[GeminiCLIQuotaFetcher] Checking for auth files...")
-        print(f"[GeminiCLIQuotaFetcher] OAuth file path: {self.oauth_file}")
-        print(f"[GeminiCLIQuotaFetcher] OAuth file exists: {self.oauth_file.exists()}")
-        print(f"[GeminiCLIQuotaFetcher] Accounts file path: {self.accounts_file}")
-        print(f"[GeminiCLIQuotaFetcher] Accounts file exists: {self.accounts_file.exists()}")
-
         # Get account info from local filesystem first (matches original behavior)
         account_info = self._get_account_info()
 
         # If local files don't exist, check proxy auth files (Python-specific enhancement)
         # This allows Gemini CLI to show up even if local files aren't present but proxy detected it
         if not account_info and self.api_client:
-            print(f"[GeminiCLIQuotaFetcher] Local auth files not found, checking proxy auth files...")
             try:
                 # Check if session is closed before making request
-                if hasattr(self.api_client, 'session') and self.api_client.session.closed:
-                    print(f"[GeminiCLIQuotaFetcher] API client session is closed, skipping proxy auth files check")
-                else:
+                if not (hasattr(self.api_client, 'session') and self.api_client.session.closed):
                     auth_files = await self.api_client.fetch_auth_files()
-                    print(f"[GeminiCLIQuotaFetcher] Got {len(auth_files)} auth files from API client")
 
                     # Look for Gemini CLI auth files
                     for auth_file in auth_files:
@@ -205,7 +181,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                         )
 
                         if is_gemini_cli:
-                            print(f"[GeminiCLIQuotaFetcher] Found Gemini CLI auth file from proxy: {auth_file.name}")
                             # Use quota_lookup_key which handles email/account extraction properly
                             email = auth_file.quota_lookup_key
                             if not email:
@@ -219,7 +194,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                                     if email.startswith(prefix):
                                         email = email[len(prefix):]
 
-                            print(f"[GeminiCLIQuotaFetcher] Using email from proxy auth file: {email}")
                             account_info = {
                                 "email": email,
                                 "name": auth_file.label or auth_file.account,
@@ -227,18 +201,14 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                                 "expiry_date": None,
                             }
                             break
-            except Exception as e:
-                print(f"[GeminiCLIQuotaFetcher] Error checking proxy auth files: {e}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
+                pass
 
         if not account_info:
-            print(f"[GeminiCLIQuotaFetcher] No account info found - auth files may not exist or be invalid")
             return results
 
         email = account_info["email"]
         name = account_info.get("name")
-        print(f"[GeminiCLIQuotaFetcher] Found account: {email} (name: {name})")
 
         # Gemini CLI doesn't have a public quota API
         # Return placeholder data showing account is connected (matches original implementation)
@@ -258,8 +228,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
             last_updated=None,
         )
 
-        print(f"[GeminiCLIQuotaFetcher] Returning {len(results)} account(s) with placeholder quota data")
-        print(f"[GeminiCLIQuotaFetcher]   - {email}: 1 model (gemini-quota, percentage=-1)")
         return results
 
     async def _fetch_subscription_info(self, access_token: str) -> Optional[dict]:
@@ -282,9 +250,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
 
         proxy_url = self._proxy_url if self._proxy_url else None
 
-        print(f"[GeminiCLIQuotaFetcher] Fetching subscription info from: {self.LOAD_PROJECT_API_URL}")
-        print(f"[GeminiCLIQuotaFetcher] Request payload: {json.dumps(payload, indent=2)}")
-
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -294,50 +259,21 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                     proxy=proxy_url,
                     timeout=aiohttp.ClientTimeout(total=15),
                 ) as response:
-                    print(f"[GeminiCLIQuotaFetcher] Subscription API response status: {response.status}")
-                    
                     if response.status != 200:
-                        # Try to read error response
-                        try:
-                            error_text = await response.text()
-                            print(f"[GeminiCLIQuotaFetcher] Error response body: {error_text}")
-                        except Exception:
-                            pass
                         return None
 
                     result = await response.json()
-                    # Print raw response for debugging
-                    print(f"[GeminiCLIQuotaFetcher] Raw subscription API response:")
-                    print(json.dumps(result, indent=2))
-                    
                     # Cache the result
                     self._subscription_cache[access_token] = result
                     return result
-        except Exception as e:
-            print(f"[GeminiCLIQuotaFetcher] Error fetching subscription info: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
             return None
 
     def _parse_subscription_info(self, subscription_data: dict) -> Optional[SubscriptionInfo]:
         """Parse subscription info from API response."""
-        print(f"[GeminiCLIQuotaFetcher] Parsing subscription data...")
-        print(f"[GeminiCLIQuotaFetcher] Subscription data keys: {list(subscription_data.keys())}")
         try:
-            subscription_info = SubscriptionInfo.from_dict(subscription_data)
-            if subscription_info:
-                print(f"[GeminiCLIQuotaFetcher] Successfully parsed subscription info:")
-                print(f"  - Tier display name: {subscription_info.tier_display_name}")
-                print(f"  - Tier ID: {subscription_info.tier_id}")
-                print(f"  - Is paid tier: {subscription_info.is_paid_tier}")
-                if subscription_info.effective_tier:
-                    print(f"  - Effective tier name: {subscription_info.effective_tier.name}")
-                    print(f"  - Effective tier ID: {subscription_info.effective_tier.id}")
-            return subscription_info
-        except Exception as e:
-            print(f"[GeminiCLIQuotaFetcher] Error parsing subscription info: {e}")
-            import traceback
-            traceback.print_exc()
+            return SubscriptionInfo.from_dict(subscription_data)
+        except Exception:
             return None
 
     async def _refresh_access_token(self, refresh_token: str) -> Optional[str]:
@@ -345,7 +281,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
         # Gemini CLI uses Google OAuth, but we don't have client credentials
         # For now, return None - token refresh would require OAuth client ID/secret
         # This is a limitation - users may need to re-authenticate if token expires
-        print(f"[GeminiCLIQuotaFetcher] Token refresh not implemented (requires OAuth client credentials)")
         return None
 
     def _is_token_expired(self, auth_data: dict) -> bool:
@@ -378,7 +313,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
 
         # Check if token is expired and try to refresh
         if access_token and self._is_token_expired(auth_data):
-            print(f"[GeminiCLIQuotaFetcher] Access token expired, attempting refresh...")
             refresh_token = auth_data.get("refreshToken") or auth_data.get("refresh_token")
             if refresh_token:
                 access_token = await self._refresh_access_token(refresh_token)
@@ -389,12 +323,11 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                     try:
                         with open(self.oauth_file, "w") as f:
                             json.dump(auth_data, f, indent=2)
-                    except Exception as e:
-                        print(f"[GeminiCLIQuotaFetcher] Failed to update auth file: {e}")
+                    except Exception:
+                        pass
                 else:
-                    print(f"[GeminiCLIQuotaFetcher] Token refresh failed - subscription info may not be available")
+                    access_token = None  # Clear expired token
             else:
-                print(f"[GeminiCLIQuotaFetcher] No refresh token available - subscription info may not be available")
                 access_token = None  # Clear expired token
 
         return access_token
@@ -413,20 +346,14 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
         # Clear cache at start of refresh
         self._subscription_cache.clear()
 
-        print(f"[GeminiCLIQuotaFetcher] fetch_all_gemini_data() called")
-
         # Get account info from local filesystem first
         account_info = self._get_account_info()
 
         # If local files don't exist, check proxy auth files
         if not account_info and self.api_client:
-            print(f"[GeminiCLIQuotaFetcher] Local auth files not found, checking proxy auth files...")
             try:
-                if hasattr(self.api_client, 'session') and self.api_client.session.closed:
-                    print(f"[GeminiCLIQuotaFetcher] API client session is closed, skipping proxy auth files check")
-                else:
+                if not (hasattr(self.api_client, 'session') and self.api_client.session.closed):
                     auth_files = await self.api_client.fetch_auth_files()
-                    print(f"[GeminiCLIQuotaFetcher] Got {len(auth_files)} auth files from API client")
 
                     # Look for Gemini CLI auth files
                     for auth_file in auth_files:
@@ -441,7 +368,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                         )
 
                         if is_gemini_cli:
-                            print(f"[GeminiCLIQuotaFetcher] Found Gemini CLI auth file from proxy: {auth_file.name}")
                             email = auth_file.quota_lookup_key
                             if not email:
                                 email = auth_file.name
@@ -451,7 +377,6 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                                     if email.startswith(prefix):
                                         email = email[len(prefix):]
 
-                            print(f"[GeminiCLIQuotaFetcher] Using email from proxy auth file: {email}")
                             account_info = {
                                 "email": email,
                                 "name": auth_file.label or auth_file.account,
@@ -459,33 +384,17 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
                                 "expiry_date": None,
                             }
                             break
-            except Exception as e:
-                print(f"[GeminiCLIQuotaFetcher] Error checking proxy auth files: {e}")
-                import traceback
-                traceback.print_exc()
+            except Exception:
+                pass
 
         if not account_info:
-            print(f"[GeminiCLIQuotaFetcher] No account info found")
             return quotas, subscriptions
 
         email = account_info["email"]
         name = account_info.get("name")
-        print(f"[GeminiCLIQuotaFetcher] Processing account: {email} (name: {name})")
 
         # Get access token (async method)
-        print(f"[GeminiCLIQuotaFetcher] Getting access token for {email}...")
         access_token = await self._get_access_token_from_auth_file()
-        
-        if access_token:
-            print(f"[GeminiCLIQuotaFetcher] Access token found (length: {len(access_token)})")
-        else:
-            print(f"[GeminiCLIQuotaFetcher] No access token available from local files")
-            # If no access token from local file, try to get from proxy
-            if self.api_client:
-                # For proxy mode, we'd need to get the token from the proxy's auth file
-                # This is a limitation - we can't easily get the access token from proxy auth files
-                # without additional API support
-                print(f"[GeminiCLIQuotaFetcher] Cannot get access token from proxy auth files (limitation)")
 
         # Fetch quota (placeholder data)
         quotas[email] = ProviderQuotaData(
@@ -506,25 +415,13 @@ class GeminiCLIQuotaFetcher(BaseQuotaFetcher):
 
         # Fetch subscription info if we have an access token
         if access_token:
-            print(f"[GeminiCLIQuotaFetcher] Attempting to fetch subscription info for {email}...")
             try:
                 subscription_data = await self._fetch_subscription_info(access_token)
                 if subscription_data:
-                    print(f"[GeminiCLIQuotaFetcher] Received subscription data for {email}")
                     subscription_info = self._parse_subscription_info(subscription_data)
                     if subscription_info:
                         subscriptions[email] = subscription_info
-                        print(f"[GeminiCLIQuotaFetcher] ✓ Successfully fetched subscription info for {email}: tier={subscription_info.tier_display_name}")
-                    else:
-                        print(f"[GeminiCLIQuotaFetcher] ✗ Failed to parse subscription info for {email}")
-                else:
-                    print(f"[GeminiCLIQuotaFetcher] ✗ No subscription data returned for {email}")
-            except Exception as e:
-                print(f"[GeminiCLIQuotaFetcher] ✗ Error fetching subscription info for {email}: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            print(f"[GeminiCLIQuotaFetcher] ✗ No access token available to fetch subscription info for {email}")
+            except Exception:
+                pass
 
-        print(f"[GeminiCLIQuotaFetcher] Returning {len(quotas)} quota(s) and {len(subscriptions)} subscription(s)")
         return quotas, subscriptions

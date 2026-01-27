@@ -4,10 +4,10 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QLabel, QHBoxLayout, QGroupBox, QPushButton,
     QMessageBox, QScrollArea, QFrame, QTableWidget, QTableWidgetItem,
     QHeaderView, QComboBox, QLineEdit, QGridLayout, QSizePolicy,
-    QDialog, QDialogButtonBox, QListWidget, QListWidgetItem
+    QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QTabWidget, QMenu
 )
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QFont, QColor, QAction
 import asyncio
 from typing import Optional, Any
 
@@ -37,6 +37,7 @@ class DashboardScreen(QWidget):
         self._filtered_data = []
         self._updating_filters = False  # Guard to prevent recursive filter updates
         self._ignored_models = set()  # Set of model names to ignore
+        self._favorites = self._load_favorites()  # Load favorites from settings
         self._setup_ui()
 
         # Register for quota update notifications
@@ -183,15 +184,97 @@ class DashboardScreen(QWidget):
         merged_layout.setSpacing(12)
         merged_layout.setContentsMargins(8, 8, 8, 8)
 
+        # Tab widget for Favorites and All
+        self.quota_tabs = QTabWidget()
+        self.quota_tabs.currentChanged.connect(self._on_quota_tab_changed)
+        self.quota_tabs.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                background-color: white;
+            }
+            QTabBar::tab {
+                background-color: #f5f5f5;
+                color: #333;
+                padding: 8px 16px;
+                border-top-left-radius: 4px;
+                border-top-right-radius: 4px;
+                margin-right: 2px;
+            }
+            QTabBar::tab:selected {
+                background-color: white;
+                color: #007AFF;
+                border-bottom: 2px solid #007AFF;
+            }
+            QTabBar::tab:hover {
+                background-color: #e8e8e8;
+            }
+        """)
+
+        # Tab 1: Favorites (default)
+        favorites_tab = QWidget()
+        favorites_layout = QVBoxLayout()
+        favorites_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.favorites_status_label = QLabel("No favorites yet. Right-click on a row in the 'All' tab to add to favorites.")
+        self.favorites_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.favorites_status_label.setWordWrap(True)
+        self.favorites_status_label.setStyleSheet("color: #666; padding: 20px;")
+        favorites_layout.addWidget(self.favorites_status_label)
+
+        # Favorites table
+        self.favorites_table = QTableWidget()
+        self.favorites_table.setColumnCount(6)
+        self.favorites_table.setHorizontalHeaderLabels(["Provider", "Account", "Model", "Usage", "Status", "⭐"])
+        favorites_header = self.favorites_table.horizontalHeader()
+        favorites_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Provider
+        favorites_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)  # Account
+        favorites_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Model
+        favorites_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Usage
+        favorites_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # Status
+        favorites_header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Star
+        self.favorites_table.setAlternatingRowColors(True)
+        self.favorites_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.favorites_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.favorites_table.customContextMenuRequested.connect(self._on_favorites_table_context_menu)
+        self.favorites_table.setStyleSheet("""
+            QTableWidget {
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                gridline-color: #eee;
+                background-color: white;
+            }
+            QTableWidget::item {
+                padding: 8px;
+            }
+            QHeaderView::section {
+                background-color: #f5f5f5;
+                padding: 8px;
+                border: none;
+                border-bottom: 2px solid #ddd;
+                font-weight: bold;
+            }
+        """)
+        # Initially hide the table until we have favorites
+        self.favorites_table.hide()
+        favorites_layout.addWidget(self.favorites_table, 1)
+        favorites_tab.setLayout(favorites_layout)
+        self.quota_tabs.addTab(favorites_tab, "Favorites")
+
+        # Tab 2: All Quotas
+        all_tab = QWidget()
+        all_layout = QVBoxLayout()
+        all_layout.setContentsMargins(0, 0, 0, 0)
+        
         self.quota_status_label = QLabel("No quota data available")
         self.quota_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.quota_status_label.setStyleSheet("color: #666; padding: 20px;")
-        merged_layout.addWidget(self.quota_status_label)
+        all_layout.addWidget(self.quota_status_label)
 
-        # Quota table - expand to fill available space
+        # All quotas table
         self.quota_table = QTableWidget()
-        self.quota_table.setColumnCount(5)
-        self.quota_table.setHorizontalHeaderLabels(["Provider", "Account", "Model", "Usage", "Status"])
+        self.quota_table.setColumnCount(6)  # Added Favorites column
+        self.quota_table.setHorizontalHeaderLabels(["Provider", "Account", "Model", "Usage", "Status", "⭐"])
         # Set column resize modes: resize to contents with max widths
         header = self.quota_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # Provider
@@ -199,8 +282,11 @@ class DashboardScreen(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)  # Model
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)  # Usage
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)  # Status (stretches to fill)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)  # Star
         self.quota_table.setAlternatingRowColors(True)
         self.quota_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.quota_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.quota_table.customContextMenuRequested.connect(self._on_quota_table_context_menu)
         self.quota_table.setStyleSheet("""
             QTableWidget {
                 border: 1px solid #ddd;
@@ -219,7 +305,17 @@ class DashboardScreen(QWidget):
                 font-weight: bold;
             }
         """)
-        merged_layout.addWidget(self.quota_table, 1)  # Stretch factor to expand vertically
+        all_layout.addWidget(self.quota_table, 1)  # Stretch factor to expand vertically
+        all_tab.setLayout(all_layout)
+        self.quota_tabs.addTab(all_tab, "All")
+        
+        # Set Favorites tab as default (index 0)
+        self.quota_tabs.setCurrentIndex(0)
+        
+        # Update favorites display on initial load
+        self._update_favorites_display()
+
+        merged_layout.addWidget(self.quota_tabs, 1)  # Stretch factor to expand vertically
         merged_group.setLayout(merged_layout)
 
         # ===== PROXY STATUS SECTION =====
@@ -404,7 +500,6 @@ class DashboardScreen(QWidget):
         if not self.view_model:
             return
 
-        print("[Dashboard] Cancel button clicked")
 
         # Cancel via view model (which handles both task and proxy manager)
         self.view_model.cancel_proxy_startup()
@@ -425,6 +520,10 @@ class DashboardScreen(QWidget):
             self._update_account_filter()
             self._update_model_filter()
         self._update_quota_display()
+        
+        # Update favorites display if on favorites tab (index 0)
+        if hasattr(self, 'quota_tabs') and self.quota_tabs.currentIndex() == 0:
+            self._update_favorites_display()
 
     def _clear_filters(self) -> None:
         """Clear all filters."""
@@ -435,10 +534,11 @@ class DashboardScreen(QWidget):
 
     def _update_display(self) -> None:
         """Update the entire display."""
-        print(f"[Dashboard] _update_display() called")
         if not self.view_model:
-            print(f"[Dashboard] No view_model, returning")
             return
+
+        # Reload favorites from settings to ensure we have the latest persisted state
+        self._favorites = self._load_favorites()
 
         # Update proxy status
         self._update_proxy_status()
@@ -452,6 +552,10 @@ class DashboardScreen(QWidget):
         # Update quota display
         self._update_quota_display()
 
+        # Update favorites display if favorites tab is active
+        if hasattr(self, 'quota_tabs') and self.quota_tabs.currentIndex() == 0:
+            self._update_favorites_display()
+
         # Force widget repaint to ensure UI updates are visible immediately
         # This is critical when updates come from background threads
         self.update()
@@ -460,6 +564,9 @@ class DashboardScreen(QWidget):
             self.quota_table.viewport().update()
         if hasattr(self, 'quota_status_label'):
             self.quota_status_label.update()
+        if hasattr(self, 'favorites_table'):
+            self.favorites_table.update()
+            self.favorites_table.viewport().update()
 
         # Force Qt event processing to ensure UI updates are rendered immediately
         # This ensures quotas are visible without requiring user interaction
@@ -676,7 +783,6 @@ class DashboardScreen(QWidget):
             self.cancel_button.setVisible(True)  # Show Cancel button
             self.cancel_button.setEnabled(True)
             self.download_label.hide()
-            print("[Dashboard] Auto-start detected, UI updated to show Starting up on Port state")
         elif not proxy_manager.proxy_status.running:
             # Auto-start enabled but proxy hasn't started yet - still hide Start button
             # This handles the case where auto-start is about to begin
@@ -691,7 +797,6 @@ class DashboardScreen(QWidget):
             self.cancel_button.setVisible(True)  # Show Cancel button
             self.cancel_button.setEnabled(True)
             self.download_label.hide()
-            print("[Dashboard] Auto-start enabled, hiding Start button and showing Cancel")
 
     def _update_statistics(self) -> None:
         """Update statistics cards."""
@@ -715,7 +820,6 @@ class DashboardScreen(QWidget):
                     account_set.add(account_key)
 
         account_count = len(account_set)
-        print(f"[Dashboard] Account count: {account_count} (from {len(self.view_model.auth_files)} auth_files + {sum(len(q) for q in self.view_model.provider_quotas.values()) if self.view_model.provider_quotas else 0} quota accounts)")
         self._update_stat_card(self.accounts_card, str(account_count))
 
         # Providers: Count from both auth_files and provider_quotas
@@ -734,7 +838,6 @@ class DashboardScreen(QWidget):
                 provider_set.add(provider.value)
 
         provider_count = len(provider_set)
-        print(f"[Dashboard] Provider count: {provider_count} (from {len(set(f.provider for f in self.view_model.auth_files if f.provider))} auth_files + {len(self.view_model.provider_quotas) if self.view_model.provider_quotas else 0} quota providers)")
         self._update_stat_card(self.providers_card, str(provider_count))
 
         # Usage stats
@@ -816,7 +919,14 @@ class DashboardScreen(QWidget):
                         break
 
                 if selected_provider and selected_provider in self.view_model.provider_quotas:
-                    accounts = sorted(self.view_model.provider_quotas[selected_provider].keys())
+                    accounts = list(self.view_model.provider_quotas[selected_provider].keys())
+                    
+                    # For Antigravity, sort accounts with favorites first
+                    if selected_provider == AIProvider.ANTIGRAVITY:
+                        accounts = self._sort_accounts_with_favorites_first(selected_provider, accounts)
+                    else:
+                        accounts = sorted(accounts)
+                    
                     for account in accounts:
                         self.account_filter.addItem(account)
             else:
@@ -941,24 +1051,7 @@ class DashboardScreen(QWidget):
         """Update the quota table."""
         self.quota_table.setRowCount(0)
 
-        print(f"[Dashboard] _update_quota_display() called")
-        print(f"[Dashboard] view_model exists: {self.view_model is not None}")
-        if self.view_model:
-            print(f"[Dashboard] provider_quotas exists: {self.view_model.provider_quotas is not None}")
-            if self.view_model.provider_quotas:
-                print(f"[Dashboard] provider_quotas keys: {[p.value for p in self.view_model.provider_quotas.keys()]}")
-                for provider, account_quotas in self.view_model.provider_quotas.items():
-                    print(f"[Dashboard]   {provider.value}: {len(account_quotas)} account(s)")
-                    for account_key, quota_data in account_quotas.items():
-                        print(f"[Dashboard]     {account_key}: {len(quota_data.models)} model(s)")
-                        if quota_data.models:
-                            for model in quota_data.models:
-                                print(f"[Dashboard]       - {model.name}: {model.percentage}% (limit={model.limit}, used={model.used}, remaining={model.remaining})")
-                        else:
-                            print(f"[Dashboard]       - No models in quota_data")
-
         if not self.view_model or not self.view_model.provider_quotas:
-            print(f"[Dashboard] No quota data - showing status label")
             self.quota_status_label.setText("No quota data available. Click Refresh to load.")
             self.quota_status_label.show()
             self.quota_table.hide()
@@ -984,28 +1077,21 @@ class DashboardScreen(QWidget):
         provider_data = {}
         total_rows = 0
 
-        print(f"[Dashboard] Filters: provider='{selected_provider_text}', account='{account_filter_text}', model='{model_filter_text}'")
-
         for provider, account_quotas in self.view_model.provider_quotas.items():
             if selected_provider and provider != selected_provider:
-                print(f"[Dashboard] Skipping {provider.value} (filtered by provider)")
                 continue
 
             if not account_quotas:
-                print(f"[Dashboard] Skipping {provider.value} (no account_quotas)")
                 continue
 
             provider_rows = []
             for account_key, quota_data in account_quotas.items():
-                print(f"[Dashboard] Processing {provider.value}/{account_key}: {len(quota_data.models)} model(s)")
                 # Filter by account (exact match or "All Accounts")
                 if account_filter_text != "All Accounts" and account_key != account_filter_text:
-                    print(f"[Dashboard]   Skipping account (filtered: '{account_key}' != '{account_filter_text}')")
                     continue
 
                 # Show account even if no models (with "No model data" indicator)
                 if not quota_data.models:
-                    print(f"[Dashboard]   Account has no models, adding placeholder row")
                     # Add a placeholder row to show the account exists
                     provider_rows.append({
                         'provider': provider,
@@ -1017,15 +1103,12 @@ class DashboardScreen(QWidget):
                     continue
 
                 for model in quota_data.models:
-                    print(f"[Dashboard]   Processing model: {model.name} (percentage: {model.percentage})")
                     # Filter by model (exact match or "All Models")
                     if model_filter_text != "All Models" and model.name != model_filter_text:
-                        print(f"[Dashboard]     Skipping model (filtered: '{model.name}' != '{model_filter_text}')")
                         continue
 
                     # Filter out ignored models
                     if model.name in self._ignored_models:
-                        print(f"[Dashboard]     Skipping model (ignored: '{model.name}')")
                         continue
 
                     provider_rows.append({
@@ -1035,13 +1118,9 @@ class DashboardScreen(QWidget):
                         'quota_data': quota_data
                     })
                     total_rows += 1
-                    print(f"[Dashboard]     Added row for {provider.value}/{account_key}/{model.name}")
 
             if provider_rows:
                 provider_data[provider] = provider_rows
-                print(f"[Dashboard] Added {len(provider_rows)} rows for {provider.value}")
-
-        print(f"[Dashboard] Total rows to display: {total_rows}")
 
         # Collect all rows from all providers into a single list for sorting
         all_rows = []
@@ -1160,6 +1239,10 @@ class DashboardScreen(QWidget):
                     status_item = QTableWidgetItem("No data available")
                     status_item.setForeground(QColor(128, 128, 128))  # Gray
                     self.quota_table.setItem(row, 4, status_item)
+                    
+                    # No model - empty star column
+                    star_item = QTableWidgetItem("")
+                    self.quota_table.setItem(row, 5, star_item)
 
                     row += 1
                     continue
@@ -1290,6 +1373,24 @@ class DashboardScreen(QWidget):
                     status_item.setToolTip("\n".join(tooltip_parts))
 
                 self.quota_table.setItem(row, 4, status_item)
+                
+                # Favorite star indicator
+                model = item_data['model']
+                if model:  # Only add favorite key if we have a model
+                    favorite_key = self._get_favorite_key(provider, account_key, model.name)
+                    is_favorite = favorite_key in self._favorites
+                    star_item = QTableWidgetItem("⭐" if is_favorite else "")
+                    star_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    if is_favorite:
+                        star_item.setForeground(QColor(255, 193, 7))  # Gold color
+                    self.quota_table.setItem(row, 5, star_item)
+                    
+                    # Store favorite key in provider item data for context menu
+                    provider_item.setData(Qt.ItemDataRole.UserRole, favorite_key)
+                else:
+                    # No model - empty star column
+                    star_item = QTableWidgetItem("")
+                    self.quota_table.setItem(row, 5, star_item)
 
                 row += 1
 
@@ -1333,7 +1434,6 @@ class DashboardScreen(QWidget):
             import json
             ignored_list = json.loads(ignored_models_json)
             self._ignored_models = set(ignored_list)
-            print(f"[Dashboard] Loaded {len(self._ignored_models)} ignored model(s) from settings")
         except Exception as e:
             print(f"[Dashboard] Error loading ignored models: {e}")
             self._ignored_models = set()
@@ -1347,7 +1447,6 @@ class DashboardScreen(QWidget):
             import json
             ignored_list = list(self._ignored_models)
             self.view_model.settings.set("ignoredModels", json.dumps(ignored_list))
-            print(f"[Dashboard] Saved {len(self._ignored_models)} ignored model(s) to settings")
         except Exception as e:
             print(f"[Dashboard] Error saving ignored models: {e}")
 
@@ -1428,7 +1527,6 @@ class DashboardScreen(QWidget):
             # Refresh display
             self._update_quota_display()
 
-            print(f"[Dashboard] Updated ignored models: {len(self._ignored_models)} model(s) will be hidden")
 
     def refresh(self):
         """Refresh the display.
@@ -1438,3 +1536,312 @@ class DashboardScreen(QWidget):
         For fresh data, ensure refresh_data() is called in the view model.
         """
         self._update_display()
+    
+    def _get_favorite_key(self, provider: AIProvider, account: str, model: str) -> str:
+        """Generate a unique key for a favorite entry."""
+        return f"{provider.value}:{account}:{model}"
+    
+    def _has_favorite_models(self, provider: AIProvider, account: str) -> bool:
+        """Check if an account has any favorite models."""
+        if not self.view_model or not self.view_model.provider_quotas:
+            return False
+        
+        if provider not in self.view_model.provider_quotas:
+            return False
+        
+        account_quotas = self.view_model.provider_quotas[provider].get(account)
+        if not account_quotas or not account_quotas.models:
+            return False
+        
+        # Check if any model for this account is in favorites
+        for model in account_quotas.models:
+            favorite_key = self._get_favorite_key(provider, account, model.name)
+            if favorite_key in self._favorites:
+                return True
+        
+        return False
+    
+    def _sort_accounts_with_favorites_first(self, provider: AIProvider, accounts: list[str]) -> list[str]:
+        """Sort accounts so that accounts with favorite models appear first."""
+        accounts_with_favorites = []
+        accounts_without_favorites = []
+        
+        for account in accounts:
+            if self._has_favorite_models(provider, account):
+                accounts_with_favorites.append(account)
+            else:
+                accounts_without_favorites.append(account)
+        
+        # Sort each group alphabetically
+        accounts_with_favorites.sort()
+        accounts_without_favorites.sort()
+        
+        # Return favorites first, then others
+        return accounts_with_favorites + accounts_without_favorites
+    
+    def _load_favorites(self) -> set[str]:
+        """Load favorites from settings."""
+        if not self.view_model:
+            return set()
+        favorites = self.view_model.settings.get("quotaFavorites", [])
+        favorites_set = set(favorites) if isinstance(favorites, list) else set()
+        return favorites_set
+    
+    def _save_favorites(self):
+        """Save favorites to settings."""
+        if not self.view_model:
+            return
+        # Persist favorites to settings immediately
+        self.view_model.settings.set("quotaFavorites", list(self._favorites))
+    
+    def _add_to_favorites(self, favorite_key: str):
+        """Add an entry to favorites."""
+        self._favorites.add(favorite_key)
+        self._save_favorites()
+        self._update_quota_display()
+        self._update_favorites_display()
+    
+    def _remove_from_favorites(self, favorite_key: str):
+        """Remove an entry from favorites."""
+        self._favorites.discard(favorite_key)
+        self._save_favorites()
+        self._update_quota_display()
+        self._update_favorites_display()
+    
+    def _on_quota_table_context_menu(self, position):
+        """Show context menu for the quota table."""
+        item = self.quota_table.itemAt(position)
+        if not item:
+            return
+        
+        row = item.row()
+        provider_item = self.quota_table.item(row, 0)
+        if not provider_item:
+            return
+        
+        favorite_key = provider_item.data(Qt.ItemDataRole.UserRole)
+        if not favorite_key:
+            return
+        
+        menu = QMenu(self)
+        is_favorite = favorite_key in self._favorites
+        
+        if is_favorite:
+            remove_action = QAction("Remove from Favorites", self)
+            remove_action.triggered.connect(lambda: self._remove_from_favorites(favorite_key))
+            menu.addAction(remove_action)
+        else:
+            add_action = QAction("Add to Favorites", self)
+            add_action.triggered.connect(lambda: self._add_to_favorites(favorite_key))
+            menu.addAction(add_action)
+        
+        menu.exec(self.quota_table.viewport().mapToGlobal(position))
+    
+    def _on_favorites_table_context_menu(self, position):
+        """Show context menu for the favorites table."""
+        item = self.favorites_table.itemAt(position)
+        if not item:
+            return
+        
+        row = item.row()
+        provider_item = self.favorites_table.item(row, 0)
+        if not provider_item:
+            return
+        
+        favorite_key = provider_item.data(Qt.ItemDataRole.UserRole)
+        if not favorite_key:
+            return
+        
+        menu = QMenu(self)
+        remove_action = QAction("Remove from Favorites", self)
+        remove_action.triggered.connect(lambda: self._remove_from_favorites(favorite_key))
+        menu.addAction(remove_action)
+        
+        menu.exec(self.favorites_table.viewport().mapToGlobal(position))
+    
+    def _on_quota_tab_changed(self, index: int):
+        """Handle quota tab change."""
+        if index == 0:  # Favorites tab (now first)
+            self._update_favorites_display()
+    
+    def _update_favorites_display(self):
+        """Update the favorites table."""
+        # Clear table
+        self.favorites_table.setRowCount(0)
+        
+        if not self.view_model or not self.view_model.provider_quotas:
+            self.favorites_status_label.setText("No quota data available. Click Refresh to load.")
+            self.favorites_status_label.show()
+            self.favorites_table.hide()
+            return
+        
+        if not self._favorites:
+            self.favorites_status_label.setText("No favorites yet. Right-click on a row in the 'All' tab to add to favorites.")
+            self.favorites_status_label.show()
+            self.favorites_table.hide()
+            return
+        
+        # We have favorites, hide status label and show table
+        self.favorites_status_label.hide()
+        self.favorites_table.show()
+        
+        # Collect favorite rows
+        favorite_rows = []
+        for provider, account_quotas in self.view_model.provider_quotas.items():
+            for account_key, quota_data in account_quotas.items():
+                for model in quota_data.models:
+                    favorite_key = self._get_favorite_key(provider, account_key, model.name)
+                    if favorite_key in self._favorites:
+                        favorite_rows.append({
+                            'provider': provider,
+                            'account': account_key,
+                            'model': model,
+                            'quota_data': quota_data,
+                            'favorite_key': favorite_key
+                        })
+        
+        # Sort by provider, then account, then usage, then model (same as main table)
+        def sort_key(item_data):
+            provider = item_data['provider']
+            account_key = item_data['account']
+            model = item_data['model']
+            
+            provider_name = provider.display_name.lower()
+            account_name = account_key.lower()
+            
+            if model and model.percentage is not None and model.percentage >= 0:
+                usage_percentage = model.percentage
+            else:
+                usage_percentage = float('inf')
+            
+            if model and model.name:
+                model_name = model.name.lower()
+            else:
+                model_name = ""
+            
+            return (provider_name, account_name, usage_percentage, model_name)
+        
+        favorite_rows.sort(key=sort_key)
+        
+        # Populate table
+        row = 0
+        for item_data in favorite_rows:
+            self.favorites_table.insertRow(row)
+            
+            provider = item_data['provider']
+            account_key = item_data['account']
+            
+            # Check for subscription info
+            subscription_info = None
+            if provider in self.view_model.subscription_infos:
+                subscription_info = self.view_model.subscription_infos[provider].get(account_key)
+            
+            # Provider
+            provider_item = QTableWidgetItem(provider.display_name)
+            provider_item.setFont(QFont("", -1, QFont.Weight.Bold))
+            provider_item.setData(Qt.ItemDataRole.UserRole, item_data['favorite_key'])
+            self.favorites_table.setItem(row, 0, provider_item)
+            
+            # Account
+            account_text = account_key
+            subscription_details = []
+            if subscription_info:
+                tier_name = subscription_info.tier_display_name
+                if tier_name and tier_name != "Unknown" and tier_name != "unknown":
+                    subscription_details.append(tier_name)
+            
+            quota_data = item_data['quota_data']
+            if quota_data.plan_type:
+                subscription_details.append(quota_data.plan_type)
+            
+            if subscription_details:
+                account_text = f"{account_text} ({subscription_details[0]})"
+            
+            account_item = QTableWidgetItem(account_text)
+            if subscription_info and subscription_info.is_paid_tier:
+                account_item.setForeground(QColor(0, 128, 0))  # Green for paid tiers
+            self.favorites_table.setItem(row, 1, account_item)
+            
+            # Model
+            model = item_data['model']
+            model_item = QTableWidgetItem(model.name)
+            self.favorites_table.setItem(row, 2, model_item)
+            
+            # Usage percentage
+            if model.percentage >= 0:
+                usage_text = f"{model.percentage:.1f}%"
+                usage_item = QTableWidgetItem(usage_text)
+                status_color = get_quota_status_color(model.percentage)
+                usage_item.setForeground(status_color)
+            else:
+                usage_text = "Unknown"
+                usage_item = QTableWidgetItem(usage_text)
+                usage_item.setForeground(Qt.GlobalColor.gray)
+            self.favorites_table.setItem(row, 3, usage_item)
+            
+            # Status column - show connection status, cap, remaining, and reset time
+            status_parts = []
+            tooltip_parts = []
+            
+            if quota_data.models:
+                # Calculate highest usage percentage across all models for status color
+                usage_percentages = [m.percentage for m in quota_data.models if m.percentage >= 0]
+                if usage_percentages:
+                    highest_usage = max(usage_percentages)
+                    status_color = get_quota_status_color(highest_usage)
+                    status_text = "✓ Available"
+                    status_parts.append(status_text)
+                else:
+                    # All models have percentage < 0 (unknown/unavailable quota)
+                    status_text = "✓ Available"
+                    status_parts.append(status_text)
+                    status_color = QColor(16, 185, 129)  # Dark green
+                
+                # Add reset time if available for this specific model
+                if model.reset_time:
+                    try:
+                        from datetime import datetime
+                        reset_dt = datetime.fromisoformat(model.reset_time.replace('Z', '+00:00'))
+                        reset_formatted = reset_dt.strftime("%b %d, %H:%M")
+                        tooltip_parts.append(f"Reset Time: {model.reset_time}")
+                        # Add to status text if space allows
+                        if len(status_parts) < 2:
+                            status_parts.append(f"Resets: {model.reset_time}")
+                    except Exception:
+                        # If parsing fails, just add raw reset time
+                        tooltip_parts.append(f"Reset Time: {model.reset_time}")
+                        status_parts.append(f"Resets: {model.reset_time}")
+                
+                # Add remaining quota if available
+                if model.remaining is not None:
+                    tooltip_parts.append(f"Remaining: {model.remaining:,}")
+                
+                # Add limit if available
+                if model.limit is not None:
+                    tooltip_parts.append(f"Limit: {model.limit:,}")
+                
+                # Create status item with combined text
+                status_text = " | ".join(status_parts) if status_parts else "✓ Available"
+                status_item = QTableWidgetItem(status_text)
+                if usage_percentages:
+                    status_item.setForeground(status_color)
+                else:
+                    status_item.setForeground(QColor(16, 185, 129))  # Dark green
+                
+                # Add tooltip with detailed information
+                if tooltip_parts:
+                    status_item.setToolTip("\n".join(tooltip_parts))
+            else:
+                status_text = "No data"
+                status_item = QTableWidgetItem(status_text)
+                status_item.setForeground(Qt.GlobalColor.gray)
+            
+            self.favorites_table.setItem(row, 4, status_item)
+            
+            # Favorite star (always shown in favorites tab)
+            star_item = QTableWidgetItem("⭐")
+            star_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            star_item.setForeground(QColor(255, 193, 7))  # Gold color
+            self.favorites_table.setItem(row, 5, star_item)
+            
+            row += 1

@@ -37,6 +37,9 @@ class AccountSelectionDialog(QDialog):
         self.resize(900, 550)  # Increased size to accommodate larger text and better spacing
 
         self._setup_ui()
+        # Sort accounts with favorites first for Antigravity
+        if self.provider == AIProvider.ANTIGRAVITY:
+            self.auth_files = self._sort_auth_files_with_favorites_first(self.auth_files)
         self._populate_accounts()
         # Schedule column width adjustment after dialog is shown
         QTimer.singleShot(100, self._adjust_column_widths)
@@ -608,6 +611,59 @@ class AccountSelectionDialog(QDialog):
         except Exception as e:
             print(f"[AccountSelectionDialog] Error loading ignored models: {e}")
             return set()
+    
+    def _get_favorite_key(self, provider: AIProvider, account: str, model: str) -> str:
+        """Generate a unique key for a favorite entry."""
+        return f"{provider.value}:{account}:{model}"
+    
+    def _has_favorite_models(self, auth_file: AuthFile) -> bool:
+        """Check if an auth file's account has any favorite models."""
+        if not self.view_model or not self.provider:
+            return False
+        
+        # Get favorites from settings
+        favorites = self.view_model.settings.get("quotaFavorites", [])
+        favorites_set = set(favorites) if isinstance(favorites, list) else set()
+        
+        # Get account key
+        account_key = auth_file.quota_lookup_key
+        
+        # Check if account has quota data
+        if self.provider not in self.view_model.provider_quotas:
+            return False
+        
+        account_quotas = self.view_model.provider_quotas[self.provider].get(account_key)
+        if not account_quotas or not account_quotas.models:
+            return False
+        
+        # Check if any model for this account is in favorites
+        for model in account_quotas.models:
+            favorite_key = self._get_favorite_key(self.provider, account_key, model.name)
+            if favorite_key in favorites_set:
+                return True
+        
+        return False
+    
+    def _sort_auth_files_with_favorites_first(self, auth_files: List[AuthFile]) -> List[AuthFile]:
+        """Sort auth files so that accounts with favorite models appear first."""
+        files_with_favorites = []
+        files_without_favorites = []
+        
+        for auth_file in auth_files:
+            if self._has_favorite_models(auth_file):
+                files_with_favorites.append(auth_file)
+            else:
+                files_without_favorites.append(auth_file)
+        
+        # Sort each group by account email/name
+        def sort_key(auth_file: AuthFile) -> str:
+            return (auth_file.email or auth_file.account or auth_file.name or auth_file.id or "").lower()
+        
+        files_with_favorites.sort(key=sort_key)
+        files_without_favorites.sort(key=sort_key)
+        
+        # Return favorites first, then others
+        return files_with_favorites + files_without_favorites
 
     def showEvent(self, event):
         """Handle dialog show event - refresh data if needed."""

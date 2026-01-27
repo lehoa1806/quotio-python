@@ -113,39 +113,26 @@ _main_window_instance = None  # Global reference to MainWindow instance for sign
 
 
 def _get_log_file_path() -> Path:
-    """Get the path to the log file in the logs directory."""
-    # Find the repo root by looking for quotio-python directory or .git
-    current = Path(__file__).resolve()
-    repo_root = None
+    """Get the path to the log file in the config directory (same location as settings)."""
+    import platform
+    
+    # Use the same directory as SettingsManager for consistency
+    system = platform.system()
+    app_name = "Quotio"
+    
+    if system == "Darwin":  # macOS
+        config_dir = Path.home() / "Library" / "Preferences"
+    elif system == "Windows":
+        config_dir = Path.home() / "AppData" / "Local" / app_name
+    else:  # Linux
+        config_dir = Path.home() / ".config" / app_name
 
-    # Walk up from current file to find repo root
-    for parent in current.parents:
-        # If we're in quotio-python, use its parent (the repo root)
-        if parent.name == "quotio-python":
-            repo_root = parent.parent
-            break
-        # Or if we find .git, that's the repo root
-        if (parent / ".git").exists():
-            repo_root = parent
-            break
-
-    # Fallback: use quotio-python directory if we can't find repo root
-    if repo_root is None:
-        for parent in current.parents:
-            if parent.name == "quotio-python":
-                repo_root = parent
-                break
-        # Last resort: use current directory
-        if repo_root is None:
-            repo_root = Path.cwd()
-
-    # Create logs directory if it doesn't exist
-    logs_dir = repo_root / "logs"
-    logs_dir.mkdir(exist_ok=True)
+    # Create config directory if it doesn't exist
+    config_dir.mkdir(parents=True, exist_ok=True)
 
     # Log file name with timestamp
     log_filename = f"quotio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    return logs_dir / log_filename
+    return config_dir / log_filename
 
 
 class TeeOutput:
