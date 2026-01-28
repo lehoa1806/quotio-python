@@ -15,6 +15,15 @@ except ImportError:
     pyqtSlot = None
 
 
+def to_local_dt(dt: Optional[datetime]) -> Optional[datetime]:
+    """Convert a datetime to local time for display. Aware datetimes are converted; naive are assumed local."""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone()
+
+
 def get_main_window(widget: QWidget) -> Optional[QWidget]:
     """Get the main window from any widget."""
     parent = widget.parent()

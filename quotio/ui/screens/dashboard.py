@@ -16,7 +16,7 @@ from ...models.subscription import SubscriptionInfo
 from ...models.operating_mode import OperatingMode
 from ..utils import (
     show_message_box, get_main_window, call_on_main_thread,
-    get_quota_status_color, get_agent_status_color
+    get_quota_status_color, get_agent_status_color, to_local_dt
 )
 
 
@@ -1321,14 +1321,14 @@ class DashboardScreen(QWidget):
 
                     # Add reset time if available for this specific model
                     if model.reset_time:
-                        # Format the ISO timestamp to a more readable format
+                        # Format the ISO timestamp to local time for display
                         try:
                             from datetime import datetime
                             reset_dt = datetime.fromisoformat(model.reset_time.replace('Z', '+00:00'))
-                            # Format as: "Jan 30, 05:47" (shorter format for Status column)
-                            reset_formatted = reset_dt.strftime("%b %d, %H:%M")
+                            reset_local = to_local_dt(reset_dt)
+                            reset_formatted = reset_local.strftime("%b %d, %H:%M") if reset_local else model.reset_time
                             status_parts.append(f"Resets: {reset_formatted}")
-                            tooltip_parts.append(f"Reset Time: {model.reset_time}")
+                            tooltip_parts.append(f"Reset Time: {reset_formatted}")
                         except Exception:
                             # If parsing fails, just show the raw value
                             status_parts.append(f"Resets: {model.reset_time}")
@@ -1802,11 +1802,12 @@ class DashboardScreen(QWidget):
                     try:
                         from datetime import datetime
                         reset_dt = datetime.fromisoformat(model.reset_time.replace('Z', '+00:00'))
-                        reset_formatted = reset_dt.strftime("%b %d, %H:%M")
-                        tooltip_parts.append(f"Reset Time: {model.reset_time}")
+                        reset_local = to_local_dt(reset_dt)
+                        reset_formatted = reset_local.strftime("%b %d, %H:%M") if reset_local else model.reset_time
+                        tooltip_parts.append(f"Reset Time: {reset_formatted}")
                         # Add to status text if space allows
                         if len(status_parts) < 2:
-                            status_parts.append(f"Resets: {model.reset_time}")
+                            status_parts.append(f"Resets: {reset_formatted}")
                     except Exception:
                         # If parsing fails, just add raw reset time
                         tooltip_parts.append(f"Reset Time: {model.reset_time}")

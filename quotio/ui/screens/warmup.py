@@ -12,6 +12,7 @@ from typing import Optional, List
 from ...models.providers import AIProvider
 from ...services.warmup_service import WarmupCadence, WarmupScheduleMode, WarmupAccountKey
 from ..dialogs.warmup_dialog import WarmupDialog
+from ..utils import to_local_dt
 
 
 class WarmupScreen(QDialog):
@@ -208,7 +209,7 @@ class WarmupScreen(QDialog):
             account_id = WarmupAccountKey(AIProvider.ANTIGRAVITY, account_key).to_id()
             status = self.view_model.warmup_statuses.get(account_id)
             if status and status.last_run:
-                last_run_str = status.last_run.strftime("%Y-%m-%d %H:%M")
+                last_run_str = to_local_dt(status.last_run).strftime("%Y-%m-%d %H:%M")
             else:
                 last_run_str = "Never"
             last_run_item = QTableWidgetItem(last_run_str)
@@ -216,7 +217,7 @@ class WarmupScreen(QDialog):
 
             # Next Run
             if status and status.next_run:
-                next_run_str = status.next_run.strftime("%Y-%m-%d %H:%M")
+                next_run_str = to_local_dt(status.next_run).strftime("%Y-%m-%d %H:%M")
                 if status.next_run < datetime.now():
                     next_run_item = QTableWidgetItem("Overdue")
                     next_run_item.setForeground(Qt.GlobalColor.red)

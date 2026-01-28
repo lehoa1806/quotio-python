@@ -44,6 +44,8 @@ pip install -r requirements.txt
 python -m quotio.main
 ```
 
+**Note:** On macOS with Homebrew Python, use a virtual environment (as above). Installing with `pip install` outside a venv will fail with "externally-managed-environment". If you see `ModuleNotFoundError: No module named 'aiohttp'` or "PyQt6 not available", ensure you activated the venv and ran `pip install -r requirements.txt` inside it.
+
 For detailed installation instructions, see the [Installation Guide](docs/getting-started/installation.md).
 
 ### Docker Installation

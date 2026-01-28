@@ -654,6 +654,9 @@ class CLIProxyManager:
                     if await self._check_port_listening():
                         raise ProxyError(f"Port {self.proxy_status.port} is already in use by another process. Please stop it or change the port.")
 
+            # Ensure proxy config has our port (proxy may have been started elsewhere or config edited)
+            self._update_config_port(self.proxy_status.port)
+
             # Start process
             print(f"[ProxyManager] Starting proxy: {self.binary_path}")
             print(f"[ProxyManager] Config: {self.config_path}")
@@ -784,6 +787,29 @@ class CLIProxyManager:
                     self.proxy_status.running = True
                     return  # Success - proxy is running
 
+            # Proxy may have started on a different port (e.g. config had different port)
+            # Parse stdout for "API server started successfully on: 127.0.0.1:PORT"
+            actual_port_match = re.search(
+                r"(?:API server |server )?started successfully on: 127\.0\.0\.1:(\d+)",
+                stdout_text,
+                re.IGNORECASE,
+            )
+            if actual_port_match:
+                actual_port = int(actual_port_match.group(1))
+                if 1024 <= actual_port <= 65535 and await self._check_port_listening(actual_port):
+                    print(f"[ProxyManager] Proxy bound to port {actual_port}, syncing from config")
+                    self.proxy_status.port = actual_port
+                    try:
+                        from ..utils.settings import SettingsManager
+                        settings = SettingsManager()
+                        settings.set("proxyPort", actual_port)
+                    except Exception:
+                        pass
+                    self._update_config_port(actual_port)
+                    if await self.check_proxy_responding():
+                        self.proxy_status.running = True
+                        return  # Success
+
             # Build error message
             error_parts = []
             if return_code is not None:
@@ -872,13 +898,14 @@ class CLIProxyManager:
 
         self.proxy_status.running = False
 
-    async def _check_port_listening(self) -> bool:
-        """Check if the proxy port is actually listening."""
+    async def _check_port_listening(self, port: Optional[int] = None) -> bool:
+        """Check if the given port (or proxy port) is actually listening."""
         import socket
+        p = port if port is not None else self.proxy_status.port
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(0.5)
-            result = sock.connect_ex(("127.0.0.1", self.proxy_status.port))
+            result = sock.connect_ex(("127.0.0.1", p))
             sock.close()
             return result == 0  # 0 means connection successful
         except Exception:
