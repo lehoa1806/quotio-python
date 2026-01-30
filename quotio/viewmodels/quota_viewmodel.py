@@ -289,7 +289,11 @@ class QuotaViewModel:
             await self.load_direct_auth_files()
 
             # Initialize based on operating mode
-            # Operating mode determines how quotas are fetched and whether proxy is needed
+            # If auto-start is enabled but mode is monitor, switch to local (user had proxy running)
+            if self.mode_manager.is_monitor_mode and self._auto_start:
+                print("[QuotaViewModel] Auto-start enabled but mode is monitor - switching to Local Proxy")
+                self.mode_manager.set_mode(OperatingMode.LOCAL_PROXY)
+
             if self.mode_manager.is_monitor_mode:
                 # Monitor mode - load quotas directly without proxy
                 # This mode is for quota monitoring only, no proxy routing
@@ -467,6 +471,13 @@ class QuotaViewModel:
 
             # Start warmup scheduler after proxy is running
             self.restart_warmup_scheduler()
+
+            # Persist operating mode and auto-start so proxy starts on next launch
+            # (user had proxy running - ensure mode and auto-start are saved)
+            if self.mode_manager.is_local_proxy_mode:
+                self.settings.set("operatingMode", OperatingMode.LOCAL_PROXY.value)
+                self.settings.set("autoStartProxy", True)
+                self._auto_start = True
 
             self.status_message = None
             self.error_message = None

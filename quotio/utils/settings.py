@@ -1,10 +1,54 @@
-"""Settings persistence manager."""
+"""Settings persistence manager.
 
+All config keys used across the app. Each key is persisted on set() and loaded
+from settings.json at startup (when SettingsManager is first created).
+"""
 import json
 import os
 import platform
 from pathlib import Path
 from typing import Any, Optional
+
+# Registry of all persisted config keys (for documentation and validation)
+CONFIG_KEYS = {
+    # Proxy
+    "proxyPort",
+    "autoStartProxy",
+    "autoRestartProxy",
+    # Operating mode
+    "operatingMode",
+    "hasCompletedOnboarding",
+    "remoteConnectionConfig",
+    # UI
+    "showLogsTab",
+    "showCustomProvidersTab",
+    "autoRefreshEnabled",
+    "autoRefreshIntervalMinutes",
+    # Dashboard
+    "quotaFavorites",
+    "ignoredModels",
+    "quotaProviderFilter",
+    "quotaAccountFilter",
+    "quotaModelFilter",
+    # Warmup
+    "warmupEnabledAccounts",
+    "warmupCadence",
+    "warmupCadenceByAccount",
+    "warmupScheduleMode",
+    "warmupScheduleModeByAccount",
+    "warmupDailyMinutes",
+    "warmupDailyMinutesByAccount",
+    "warmupSelectedModels",
+    "warmupExcludedAccounts",
+    # IDE scan
+    "ideScanOptions",
+    "ideAutoScanAtStartup",
+    "ideScanAutoScanMode",
+    "ideScanAutoScan",
+    "ideScanResult",
+    # Custom providers
+    "customProviders",
+}
 
 
 class SettingsManager:
@@ -64,6 +108,10 @@ class SettingsManager:
         if key in self._settings:
             del self._settings[key]
             self._save()
+
+    def remove(self, key: str):
+        """Remove a setting (alias for delete)."""
+        self.delete(key)
 
     def clear(self):
         """Clear all settings."""

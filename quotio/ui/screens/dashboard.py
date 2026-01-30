@@ -514,6 +514,9 @@ class DashboardScreen(QWidget):
         if self._updating_filters:
             return
 
+        # Persist filter selections
+        self._save_filters()
+
         # If provider filter changed, update account and model filters to show only relevant items
         sender = self.sender()
         if sender == self.provider_filter:
@@ -530,6 +533,7 @@ class DashboardScreen(QWidget):
         self.provider_filter.setCurrentIndex(0)  # "All Providers"
         self.account_filter.setCurrentIndex(0)  # "All Accounts"
         self.model_filter.setCurrentIndex(0)  # "All Models"
+        self._save_filters()
         self._update_quota_display()
 
     def _update_display(self) -> None:
@@ -869,7 +873,9 @@ class DashboardScreen(QWidget):
         # Block signals to prevent recursive calls
         self._updating_filters = True
         try:
-            current_text = self.provider_filter.currentText()
+            # Prefer persisted filter on restore (loaded from settings at startup)
+            restore_text = (self.view_model.settings.get("quotaProviderFilter") or
+                           self.provider_filter.currentText() or "All Providers")
             self.provider_filter.blockSignals(True)
             self.provider_filter.clear()
             self.provider_filter.addItem("All Providers")
@@ -877,11 +883,10 @@ class DashboardScreen(QWidget):
             for provider in sorted(self.view_model.provider_quotas.keys(), key=lambda p: p.display_name):
                 self.provider_filter.addItem(provider.display_name)
 
-            index = self.provider_filter.findText(current_text)
+            index = self.provider_filter.findText(restore_text)
             if index >= 0:
                 self.provider_filter.setCurrentIndex(index)
             else:
-                # If current text not found, default to "All Providers"
                 self.provider_filter.setCurrentIndex(0)
 
             self.provider_filter.blockSignals(False)
@@ -904,7 +909,8 @@ class DashboardScreen(QWidget):
         # Block signals to prevent recursive calls
         self.account_filter.blockSignals(True)
         try:
-            current_text = self.account_filter.currentText()
+            restore_text = (self.view_model.settings.get("quotaAccountFilter") or
+                           self.account_filter.currentText() or "All Accounts")
             self.account_filter.clear()
             self.account_filter.addItem("All Accounts")
 
@@ -939,12 +945,11 @@ class DashboardScreen(QWidget):
                 for account in sorted(all_accounts):
                     self.account_filter.addItem(account)
 
-            # Restore selection if still available
-            index = self.account_filter.findText(current_text)
+            # Restore selection if still available (prefer persisted value)
+            index = self.account_filter.findText(restore_text)
             if index >= 0:
                 self.account_filter.setCurrentIndex(index)
             else:
-                # If current text not found, default to "All Accounts"
                 self.account_filter.setCurrentIndex(0)
         finally:
             self.account_filter.blockSignals(False)
@@ -961,7 +966,8 @@ class DashboardScreen(QWidget):
         # Block signals to prevent recursive calls
         self.model_filter.blockSignals(True)
         try:
-            current_text = self.model_filter.currentText()
+            restore_text = (self.view_model.settings.get("quotaModelFilter") or
+                           self.model_filter.currentText() or "All Models")
             self.model_filter.clear()
             self.model_filter.addItem("All Models")
 
@@ -1037,12 +1043,11 @@ class DashboardScreen(QWidget):
                 for model in sorted_models:
                     self.model_filter.addItem(model.name)
 
-            # Restore selection if still available
-            index = self.model_filter.findText(current_text)
+            # Restore selection if still available (prefer persisted value)
+            index = self.model_filter.findText(restore_text)
             if index >= 0:
                 self.model_filter.setCurrentIndex(index)
             else:
-                # If current text not found, default to "All Models"
                 self.model_filter.setCurrentIndex(0)
         finally:
             self.model_filter.blockSignals(False)
@@ -1586,6 +1591,17 @@ class DashboardScreen(QWidget):
         favorites = self.view_model.settings.get("quotaFavorites", [])
         favorites_set = set(favorites) if isinstance(favorites, list) else set()
         return favorites_set
+
+    def _save_filters(self) -> None:
+        """Persist filter selections to settings."""
+        if not self.view_model or self._updating_filters:
+            return
+        try:
+            self.view_model.settings.set("quotaProviderFilter", self.provider_filter.currentText())
+            self.view_model.settings.set("quotaAccountFilter", self.account_filter.currentText())
+            self.view_model.settings.set("quotaModelFilter", self.model_filter.currentText())
+        except Exception:
+            pass
     
     def _save_favorites(self):
         """Save favorites to settings."""
